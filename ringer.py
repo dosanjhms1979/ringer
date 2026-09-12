@@ -2184,6 +2184,7 @@ class TaskRuntime:
     last_check_returncode: int | None = None
     last_check_timed_out: bool = False
     last_check_output: str = ""
+    attempt_history: list[dict[str, Any]] = field(default_factory=list)
     # Why task setup failed before any worker could spawn (e.g. a stale
     # worktree from a previous failed run). Without this an ERROR verdict at
     # 0.0s carries no diagnostics anywhere the operator looks.
@@ -2392,6 +2393,7 @@ class StateWriter:
                     "check_returncode": runtime.last_check_returncode,
                     "check_timed_out": runtime.last_check_timed_out,
                     "check_output_tail": shorten(runtime.last_check_output, 4000),
+                    "attempt_history": [dict(item) for item in runtime.attempt_history],
                     "setup_error": runtime.setup_error,
                     "timeout_s": runtime.task.timeout_s,
                     "max_attempts": runtime.task.max_attempts,
@@ -8888,6 +8890,12 @@ class RingerRunner:
                     runtime.last_check_returncode = verify.check_returncode
                     runtime.last_check_timed_out = verify.check_timed_out
                     runtime.last_check_output = verify.raw_output_excerpt
+                    runtime.attempt_history.append({
+                        "attempt": attempt,
+                        "check_returncode": verify.check_returncode,
+                        "check_timed_out": verify.check_timed_out,
+                        "check_output_tail": shorten(verify.raw_output_excerpt, 4000),
+                    })
                 duration_ms = int((time.monotonic() - attempt_started) * 1000)
                 self._log_attempt(runtime, current_spec, retrying, worker, verify, verdict, duration_ms)
                 if verdict == "PASS":
@@ -9941,11 +9949,15 @@ def looks_like_assistant_text(line: str) -> bool:
 
 
 def build_failure_context(log_path: Path, raw_check_output: str) -> str:
-    worker_tail = tail_text(log_path)
-    context = f"{worker_tail}\n{raw_check_output}".strip()
-    if len(context) > 6000:
-        return context[-6000:]
-    return context
+    limit = 6000
+    check_context = f"CHECK OUTPUT:\n{raw_check_output}"
+    if len(check_context) > limit:
+        return raw_check_output[-limit:]
+    worker_label = "\n\nWORKER LOG TAIL: "
+    remaining = limit - len(check_context) - len(worker_label)
+    if remaining <= 0:
+        return check_context
+    return check_context + worker_label + tail_text(log_path).strip()[-remaining:]
 
 
 def shorten(value: str, limit: int) -> str:
