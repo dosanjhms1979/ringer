@@ -219,6 +219,27 @@ checks and raw logs support — no vibes, no worker self-reports.
   to k2.7.
 
 
+## Grok 4.6 (Grok Build CLI v1.0.13, per-call billing)
+
+- 2026-09-12 — code-feature proving run (grok-code-feature-proving): the same
+  three hidden-test scenarios the Codex arms ran (logparse / scoreagg / ladder,
+  44 assertions the worker never sees), logparse spec corrected first so the
+  trailing-whitespace ambiguity could not manufacture a miss. 3/3 PASS on
+  attempt 1, lifting the lane from a single logged-out 0% row to PROVEN at 3/4
+  (75%). Spot-checked: one file per task as specified, clean idiomatic code,
+  line counts in the same band as both Codex arms (28-81 lines). Harness
+  self-report captured on all three rows via the new model_report_regex.
+  COST IS THE STORY: 89k / 93k / 162k tokens against Astra's 39k / 36k / 15k and
+  GPT-5.5's 38k / 16k / 11k on identical specs — roughly 2-10x the tokens — and
+  this lane bills per call: $0.50 for the three tasks (the JSON reports
+  total_cost_usd, which the old config comment denied). Same correctness as the
+  Codex arms at several times the spend. ROUTING: a valid overflow or
+  third-opinion lane, not a first choice for code-feature while Astra is
+  plan-included and equally correct.
+- 2026-09-12 — the pre-existing 0% code-feature row is from 2026-09-05, when the
+  CLI was signed out (627,956 "tokens" in 6s is not a real attempt). Treat it as
+  a lane failure, not a model failure.
+
 ## grok-build (Grok CLI engine, flat plan)
 
 - 2026-07-10 — identity correction (Jon): the Grok Build CLI is a HARNESS
