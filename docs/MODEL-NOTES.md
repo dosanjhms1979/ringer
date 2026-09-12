@@ -100,13 +100,21 @@ checks and raw logs support — no vibes, no worker self-reports.
   correctness reason to prefer Astra over GPT-5.5, and a mild cost reason to
   prefer 5.5. Astra's advantage, if it has one, should be looked for on
   underspecified or multi-tool work rather than contract-following.
-- 2026-09-12 — CAVEAT on the shared logparse retry: attempt 1 failed for both
-  arms, but the failure output did not survive into state (the retry prompt's
-  "Previous attempt failed:" section carried a file diff, not check output), so
-  it could not be attributed to either the models or the spec. It hit both arms
-  equally and so does not bias the comparison, but it does mean the two "first
-  try" misses in this run are NOT evidence about model quality. Worth fixing:
-  preserve per-attempt check output in run state, not just the last attempt's.
+- 2026-09-12 — RESOLVED, and it reverses the reading above. The shared logparse
+  retry was a SPEC defect, not a model defect. With the attempt-history fix
+  live, a third run finally preserved attempt 1's output: every arm failed the
+  same single assertion, test_trailing_whitespace_trimmed, returning None for
+  the line "model:   gpt-5.5  " with trailing spaces. The spec defined the
+  engine field as "stripped of surrounding whitespace" but defined the model
+  field only as a non-whitespace run anchored to end of line, never saying
+  trailing whitespace was tolerated after it. Three workers across three runs
+  read that literally and were defensible. Correct scoring for the bakeoff is
+  therefore 3/3 first-try for BOTH models on substance, not 2/3 — the arms stay
+  tied, and the cost gap (Astra ~40% more tokens) remains the only real
+  separator. Lesson for spec authors, and the mirror of the existing
+  check-authoring lesson: when one field in a contract says how whitespace is
+  handled and a sibling field does not, workers will read the silence as
+  significant. State it on every field or on none.
 
 - 2026-09-12 — GPT-6 Astra, code-feature (attempt-history fix in ringer.py itself,
   run ringer-attempt-history): PASS on attempt 1, 42,852 tokens, 246s. Worktree
