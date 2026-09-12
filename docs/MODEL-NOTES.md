@@ -294,6 +294,27 @@ checks and raw logs support — no vibes, no worker self-reports.
 
 ## Process lessons (cross-model)
 
+- 2026-09-12 — SECOND grader defect of the day, same shape (AE-32, Exam Prep
+  question bank): both worker attempts FAILED on a KeyError in the CHECK's
+  counting script, which globbed `data/bank/*.json` and iterated
+  `sources.json` (a metadata file the SPEC itself asked for) as if it were a
+  question array. The worker had built 271 correctly cited items and its
+  notes even said "sources.json and skipped.json are metadata, not question
+  arrays". Diagnosed in one read via attempt_history; fixed grader passed on
+  the untouched tree in 2s; round 2 (verify-only spec) PASSED first try at
+  34k tokens. Cost of the defect: 244k tokens across two wasted attempts.
+  RULES: (1) a check that globs the worker's output directory must filter by
+  SHAPE (list of dicts with the expected keys), never by filename convention
+  alone, because the spec told the worker to write other files there;
+  (2) put every unchanged-behaviour assert BEFORE the first new-behaviour
+  assert so `--baseline` proves the unchanged block — AE-32's first baseline
+  stopped at "missing dependency drizzle-orm" and never exercised typecheck;
+  (3) an orchestrator spot-check that string-matches worker output against
+  raw PDF text must tolerate the worker's documented normalisations (here:
+  stacked fractions rendered as "1/2" where pypdf reads "1 2") — one honest
+  item tripped it and the gate correctly refused to commit until a human
+  looked, which is the right failure mode.
+
 - 2026-09-12 — CHECK BUG, not a model bug (AE-28, Exam Prep bootstrap): both
   worker attempts FAILED on `grep -Eq "Tests +[1-9][0-9]* passed"` against the
   captured `npm test` output, while the work itself was green (lint, typecheck,
