@@ -40,10 +40,17 @@ confidence = "verified"
 source = "https://developers.openai.com/codex/models"
 last_verified = 2026-07-10
 
+[engines.codex.models."gpt-6-astra"]
+display = "GPT-6 Astra"
+lab = "OpenAI"
+confidence = "verified"     # Codex CLI self-report `model: gpt-6-astra` in worker logs (AE-22/AE-25, 2026-09-05); docs describe it as "our most capable model for complex work across code, apps, and research"
+source = "https://learn.chatgpt.com/docs/models"
+last_verified = 2026-09-12
+
 [engines.grok]
 harness = "Grok Build CLI"
 access = "OAuth plan"
-default_model_key = "grok-build"
+default_model_key = "grok-4.6"
 
 [engines.grok.models."grok-build"]
 # "Grok Build" is the HARNESS (the CLI product), never a model name. The CLI
@@ -63,6 +70,19 @@ lab = "Cursor (Anysphere)"
 confidence = "verified"     # Cursor (Anysphere) model, served through xAI's Grok Build CLI in our setup
 source = "https://cursor.com/blog/composer-2-5"
 last_verified = 2026-07-10
+
+[engines.grok.models."grok-4.6"]
+# Grok Build CLI v1.0.13 `grok models` lists grok-4.6 as the sole available
+# model and the default; config.toml pins model_default = "grok-4.6".
+# Release notes wording (Aug 2026): "Grok 4.6, SpaceXAI's frontier model for
+# coding, agentic tasks, and knowledge work, is now available on the xAI API."
+# SpaceXAI is the lab; xAI is the API surface. The grok-4.5 entry above was
+# verified 2026-07-10 under the older "xAI" wording and is left as recorded.
+display = "Grok 4.6"
+lab = "SpaceXAI"
+confidence = "verified"
+source = "https://docs.x.ai/developers/release-notes"
+last_verified = 2026-09-12
 
 [engines.opencode]
 harness = "OpenCode"
