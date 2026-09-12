@@ -10,7 +10,9 @@
 [engines.codex]
 harness = "Codex CLI"
 access = "OAuth plan"
-default_model_key = "gpt-5.5"
+# Matches config.toml's model_default, pinned 2026-09-12. Only reached when an
+# attempt carries neither a manifest model nor a harness self-report.
+default_model_key = "gpt-6-astra"
 
 [engines.codex.models."gpt-5.5"]
 display = "GPT-5.5"
