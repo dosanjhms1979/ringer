@@ -294,6 +294,22 @@ checks and raw logs support — no vibes, no worker self-reports.
 
 ## Process lessons (cross-model)
 
+- 2026-09-12 — CHECK BUG, not a model bug (AE-28, Exam Prep bootstrap): both
+  worker attempts FAILED on `grep -Eq "Tests +[1-9][0-9]* passed"` against the
+  captured `npm test` output, while the work itself was green (lint, typecheck,
+  vitest, build all passed in the orchestrator lane, and the worker's notes
+  said "one shell test passed"). Cause: vitest 5 emits ANSI colour even when
+  piped, and the escapes sit between "Tests" and the count, so the anchored
+  grep never matches. Diagnosed in seconds because attempt_history preserved
+  attempt 1's check output — the same class of loss that hid the bakeoff retry
+  earlier today. Fix: strip ANSI before asserting on tool output
+  (`sed 's/\x1b\[[0-9;]*m//g'`), or pass the tool's own no-colour flag. This
+  is the third colour-related false negative of the day (codex `--color auto`
+  under a wrapper broke token_regex and model_report_regex the same way).
+  RULE for check authors: any grep over a CLI's output must run on
+  ANSI-stripped text. The worker paid two attempts (87k tokens) for a grader
+  defect; the round-2 spec says so explicitly so the record stays honest.
+
 - 2026-07-06 — the orchestrator's CHECKS were the day's top failure source:
   three check bugs (fixture newline join, first-occurrence ordering vs the
   watchlist strip, claim-prefix split on '.' instead of ':') each produced
