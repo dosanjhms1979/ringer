@@ -83,6 +83,46 @@ checks and raw logs support — no vibes, no worker self-reports.
   half-written trailing line). Codex is the proven lane for both sides of
   the review->fix loop on this codebase.
 
+## GPT-6 Astra (codex) vs GPT-5.5 (codex) — head-to-head bakeoff
+
+- 2026-09-12 — code-feature bakeoff (run astra-vs-gpt55-bakeoff): three pure-stdlib
+  Python modules (log-header parser, scoreboard aggregator, promotion-ladder state
+  machine), each spec'd to an exact behavioural contract and graded by a hidden
+  unittest suite (44 assertions total) the workers never saw. Identical specs,
+  identical checks, no reasoning-effort flags on either arm, so the only variable
+  was the model. RESULT: a dead heat on correctness — 3/3 pass and 2/3 first-try
+  for BOTH models, with both arms retrying on the same scenario (logparse).
+  Astra cost more for the same outcome: 89,933 tokens / 174s total vs GPT-5.5's
+  64,050 / 150s, so roughly 40% more tokens and 16% more wall-clock. Astra's code
+  was also consistently terser (29/35/61 lines vs 33/46/80). Spot-checked the
+  passing artifacts: no hidden-test gaming, no stubbing, clean idiomatic code
+  from both. TAKEAWAY: on well-specified mechanical feature work there is no
+  correctness reason to prefer Astra over GPT-5.5, and a mild cost reason to
+  prefer 5.5. Astra's advantage, if it has one, should be looked for on
+  underspecified or multi-tool work rather than contract-following.
+- 2026-09-12 — CAVEAT on the shared logparse retry: attempt 1 failed for both
+  arms, but the failure output did not survive into state (the retry prompt's
+  "Previous attempt failed:" section carried a file diff, not check output), so
+  it could not be attributed to either the models or the spec. It hit both arms
+  equally and so does not bias the comparison, but it does mean the two "first
+  try" misses in this run are NOT evidence about model quality. Worth fixing:
+  preserve per-attempt check output in run state, not just the last attempt's.
+
+- 2026-09-12 — GPT-6 Astra, code-feature (attempt-history fix in ringer.py itself,
+  run ringer-attempt-history): PASS on attempt 1, 42,852 tokens, 246s. Worktree
+  mode, four-site change (TaskRuntime field, state emit, attempt loop append under
+  the existing lock, build_failure_context rewrite) plus a 106-line test file it
+  wrote itself. Graded by a four-layer verifier it never saw: patch export, full
+  suite green, direct import assertions on build_failure_context, and a real
+  two-attempt mock run asserting distinct per-attempt output. Clean minimal diff,
+  correct lock placement, defensive copy on the state emit matching neighbouring
+  style, and non-vacuous tests including exact-equality on attempt_history. This
+  is the first Astra data point on REAL repo work rather than the synthetic
+  bakeoff, and it is a clear pass. Contrast with the 2026-09-12 bakeoff above,
+  where Astra merely tied GPT-5.5 on mechanical contract-following: the
+  hypothesis that Astra earns its cost on multi-site work in a live codebase now
+  has one supporting data point. Needs more before it is a routing rule.
+
 ## glm-5.2 via opencode (`openrouter/z-ai/glm-5.2`)
 
 - The cheap-intelligence default (~$0.74/M in, $2.33/M out, 2026-07 —
