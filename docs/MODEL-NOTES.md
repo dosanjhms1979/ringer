@@ -512,3 +512,27 @@ checks and raw logs support — no vibes, no worker self-reports.
   usage inputTokens 45,827 / outputTokens 2,902 / cacheRead 76,928. The JSON
   has no total-tokens field and no model self-report; scoreboard tokens for
   this engine = input tokens only. Billing is plan-included (no cost field).
+
+## 2026-09-26 — check-lessons round 2 (run ringer-check-lessons-round-2), 6 code-fix tasks
+
+- 6/6 PASS first try in worktrees; patches applied, full suite 327 tests green
+  after one expectation update in tests/test_attempt_history.py (it pinned
+  the whitespace-collapsed check_output_tail the finding said was wrong).
+- gpt-6-astra ×2: the ringer.py verifier fix (incremental check-stdout
+  capture so a timed-out check keeps its diagnostic; retry prompt gets the
+  TAIL not the prefix; verdict_for returns PASS when the check passed even if
+  the worker timed out, with worker_timed_out recorded) — 76k tokens, 7 new
+  tests incl. two end-to-end CLI runs; and the test-hardening baseline gate,
+  34k. Both first try. Astra is now PROVEN on code-fix.
+- gpt-5.6-sol ×1: probe api/postmortem heading forms, 62k, first try —
+  PROVEN on code-fix (3/3).
+- grok-4.7-high via Cursor ×3: numbered headings across five checks (147k
+  input tokens — the widest lane), research-proof ANSI + tail (63k), and the
+  review-swarm evidence label (40k). All first try. PROVEN on code-fix.
+- ORCHESTRATOR CHECK BUG (mine): every --verify-command in this manifest was
+  `python3 -m unittest ... 2>&1 | tail -N && ...`. The pipe made the exit
+  status tail's, so a red suite could not fail the check — the Astra task's
+  full-suite run WAS red on test_attempt_history and passed anyway. Caught
+  only because the orchestrator re-ran the suite after applying. RULE: never
+  pipe a verify command's test runner into tail/head/grep; use `set -o
+  pipefail` or write output to a file and tail it separately.

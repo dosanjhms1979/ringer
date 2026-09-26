@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import re
 import subprocess
 import sys
@@ -26,6 +27,10 @@ def has_placeholder(value: str) -> bool:
 
 def word_count(text: str) -> int:
     return len(re.findall(r"\S+", text))
+
+
+def strip_ansi(text: str) -> str:
+    return re.sub(r"\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07]*\x07", "", text)
 
 
 def output_tail(text: str, limit: int = 4000) -> str:
@@ -106,7 +111,9 @@ def validate_proof(args: argparse.Namespace) -> list[str]:
             text=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
+            env={**os.environ, "NO_COLOR": "1", "FORCE_COLOR": "0", "TERM": "dumb"},
         )
+        output = strip_ansi(result.stdout)
         if result.returncode != 0:
             failures.append(
                 fail(
@@ -114,8 +121,14 @@ def validate_proof(args: argparse.Namespace) -> list[str]:
                     f"command exited {result.returncode}: {args.proof_command}\n{output_tail(result.stdout)}",
                 )
             )
-        elif args.success_marker not in result.stdout:
-            failures.append(fail("missing_success_marker", f"proof output did not contain {args.success_marker!r}"))
+        elif args.success_marker.lower() not in output.lower():
+            tail = "\n".join(output.splitlines()[-40:])
+            failures.append(
+                fail(
+                    "missing_success_marker",
+                    f"proof output did not contain {args.success_marker!r}\n{tail}",
+                )
+            )
     return failures
 
 

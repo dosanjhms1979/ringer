@@ -27,6 +27,7 @@ Do not use this when workers need to change production code, shared fixtures, gl
 | `{{MODULE_UNDER_TEST — source module, route, command, or behavior to cover, with entry-point files for reading only}}` | Source surface the worker may read but not edit. |
 | `{{TEST_BEHAVIOR — the missing behavior, edge case, regression, or invariant the new tests must prove}}` | The behavior the new tests should prove. |
 | `{{TEST_COMMAND}}` | Exact test command to run from the worktree. Use the same command to collect `{{BASELINE_TEST_COUNT}}`. |
+| `{{BASELINE_FAILURES — substrings of test names already failing at HEAD in the sandbox, or empty}}` | Comma-or-newline separated substrings identifying failures already present at HEAD in the sandbox. Leave empty to require a successful test command. |
 | `{{BASELINE_TEST_COUNT}}` | Integer test count from the same runner command before the swarm starts. |
 | `{{NEW_TEST_FILES}}` | Semicolon-separated repo-relative test files that must exist after the worker finishes. |
 | `{{PYTHON}}` | Python executable for the check script. |
@@ -42,6 +43,8 @@ Do not use this when workers need to change production code, shared fixtures, gl
 `checks/test_hardening_check.py` first inspects changed paths and fails if any path is outside the owned test files or inside a forbidden production path.
 
 It verifies every `{{NEW_TEST_FILES}}` path exists, counts assertion matches and assertion density, runs `{{TEST_COMMAND}}`, parses the runner summary, requires the parsed count to be greater than `{{BASELINE_TEST_COUNT}}`, then stages and exports a non-empty patch to `{{EXPORT_DIR}}/{{TEST_KEY}}.patch`.
+
+A non-zero test exit is accepted only when every extracted failure line contains a supplied `--baseline-failures` substring. New failures, missing failure lines, or an empty baseline still fail the check. Failure extraction uses ANSI-stripped output and can be customized with `--failure-line-regex`. The test-count increase is still required when baseline failures are accepted.
 
 This is hard to game because a worker cannot make tests pass by editing source, cannot add empty smoke tests with no assertions, and cannot claim more coverage unless the runner summary count actually increases.
 

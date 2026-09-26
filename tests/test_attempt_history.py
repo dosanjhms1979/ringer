@@ -93,8 +93,10 @@ class AttemptHistoryTests(unittest.TestCase):
             self.assertEqual(1, len(states))
             task = json.loads(states[0].read_text(encoding="utf-8"))["tasks"][0]
             expected = [
+                # The tail keeps the check's real line breaks (no whitespace
+                # collapsing) and records whether the worker itself timed out.
                 {"attempt": attempt, "check_returncode": 1, "check_timed_out": False,
-                 "check_output_tail": f"FAIL: {name} attempt"}
+                 "check_output_tail": f"FAIL: {name} attempt\n", "worker_timed_out": False}
                 for attempt, name in ((1, "first"), (2, "second"))
             ]
             self.assertEqual(expected, task["attempt_history"])

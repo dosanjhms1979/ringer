@@ -27,6 +27,27 @@ def fail(message: str) -> None:
     print(f"FAIL: {message}")
 
 
+HEADING_LEVELS = (2,)
+
+
+def heading_pattern(level: int, text: str) -> str:
+    return rf"^{'#' * level}\s+(?:\d+[.):]\s+)?{re.escape(text)}:?\s*$"
+
+
+def has_heading(text: str, heading: str) -> bool:
+    flags = re.IGNORECASE | re.MULTILINE
+    return any(re.search(heading_pattern(level, heading), text, flags) for level in HEADING_LEVELS)
+
+
+def found_headings(text: str) -> list[str]:
+    return [line.strip() for line in text.splitlines() if re.match(r"^#{1,6}\s+\S", line)]
+
+
+def missing_section(section: str, text: str) -> str:
+    found = ", ".join(found_headings(text)) or "(none)"
+    return f"validation report missing section: {section}; found headings: {found}"
+
+
 def split_list(value: str) -> list[str]:
     if not value.strip():
         return []
@@ -248,18 +269,19 @@ def report_command(args: argparse.Namespace) -> int:
             fail(item)
         return 1
 
-    report_text = report_path.read_text(encoding="utf-8", errors="replace").lower()
+    report = report_path.read_text(encoding="utf-8", errors="replace")
+    report_text = report.lower()
     for section in (
-        "## verdict",
-        "## row counts",
-        "## schema",
-        "## empty value scan",
-        "## spot invariants",
-        "## rejects",
-        "## assumptions",
+        "verdict",
+        "row counts",
+        "schema",
+        "empty value scan",
+        "spot invariants",
+        "rejects",
+        "assumptions",
     ):
-        if section not in report_text:
-            failures.append(f"validation report missing section: {section}")
+        if not has_heading(report, section):
+            failures.append(missing_section(f"## {section}", report))
 
     record_failures, reject_count, rows = validate_records(
         stage=args.stage,

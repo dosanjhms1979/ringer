@@ -58,6 +58,27 @@ def word_count(text: str) -> int:
     return len(re.findall(r"\b[\w'-]+\b", text))
 
 
+HEADING_LEVELS = (2,)
+
+
+def heading_pattern(level: int, text: str) -> str:
+    return rf"^{'#' * level}\s+(?:\d+[.):]\s+)?{re.escape(text)}:?\s*$"
+
+
+def has_heading(text: str, heading: str) -> bool:
+    flags = re.IGNORECASE | re.MULTILINE
+    return any(re.search(heading_pattern(level, heading), text, flags) for level in HEADING_LEVELS)
+
+
+def found_headings(text: str) -> list[str]:
+    return [line.strip() for line in text.splitlines() if re.match(r"^#{1,6}\s+\S", line)]
+
+
+def missing_section(section: str, text: str) -> str:
+    found = ", ".join(found_headings(text)) or "(none)"
+    return f"missing required section: {section}; found headings: {found}"
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--report", required=True)
@@ -90,16 +111,15 @@ def main() -> int:
         return 1
 
     report = report_path.read_text(encoding="utf-8", errors="replace")
-    lowered = report.lower()
     for section in (
-        "## decision summary",
-        "## comparison table",
-        "## strongest evidence",
-        "## gaps and could-not-fetch items",
-        "## recommended follow-up",
+        "decision summary",
+        "comparison table",
+        "strongest evidence",
+        "gaps and could-not-fetch items",
+        "recommended follow-up",
     ):
-        if section not in lowered:
-            failures.append(f"missing required section: {section}")
+        if not has_heading(report, section):
+            failures.append(missing_section(f"## {section}", report))
 
     if word_count(report) < args.min_words:
         failures.append(f"synthesis is below minimum substance threshold of {args.min_words} words")

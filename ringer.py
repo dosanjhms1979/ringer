@@ -2183,6 +2183,7 @@ class TaskRuntime:
     final_verdict: str | None = None
     last_check_returncode: int | None = None
     last_check_timed_out: bool = False
+    last_worker_timed_out: bool = False
     last_check_output: str = ""
     attempt_history: list[dict[str, Any]] = field(default_factory=list)
     # Why task setup failed before any worker could spawn (e.g. a stale
@@ -2215,6 +2216,7 @@ class VerifyResult:
     check_timed_out: bool
     raw_output_excerpt: str
     missing_files: tuple[str, ...] = ()
+    raw_output_tail: str = ""
 
 
 class ProcessTree:
@@ -2392,7 +2394,8 @@ class StateWriter:
                     "check": runtime.task.check,
                     "check_returncode": runtime.last_check_returncode,
                     "check_timed_out": runtime.last_check_timed_out,
-                    "check_output_tail": shorten(runtime.last_check_output, 4000),
+                    "check_output_tail": runtime.last_check_output[-4000:],
+                    "worker_timed_out": runtime.last_worker_timed_out,
                     "attempt_history": [dict(item) for item in runtime.attempt_history],
                     "setup_error": runtime.setup_error,
                     "timeout_s": runtime.task.timeout_s,
@@ -8726,6 +8729,7 @@ class Verifier:
             check_returncode=check_returncode,
             check_timed_out=check_timed_out,
             raw_output_excerpt=output[:2000],
+            raw_output_tail=output[-6000:],
             missing_files=missing_files,
         )
 
@@ -8752,17 +8756,27 @@ class Verifier:
             stderr=asyncio.subprocess.STDOUT,
             start_new_session=True,
         )
+        stdout = bytearray()
+
+        async def collect_output() -> None:
+            assert proc.stdout is not None
+            while chunk := await proc.stdout.read(65536):
+                stdout.extend(chunk)
+            await proc.wait()
+
         timed_out = False
         try:
-            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=CHECK_TIMEOUT_S)
+            await asyncio.wait_for(collect_output(), timeout=CHECK_TIMEOUT_S)
         except asyncio.TimeoutError:
             timed_out = True
             terminate_process_group(proc)
             try:
-                stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=5)
+                await asyncio.wait_for(collect_output(), timeout=5)
             except asyncio.TimeoutError:
                 kill_process_group(proc)
-                stdout, _ = await proc.communicate()
+                # An escaped descendant may still hold the pipe open.
+                with contextlib.suppress(asyncio.TimeoutError):
+                    await asyncio.wait_for(collect_output(), timeout=5)
         output = stdout.decode("utf-8", errors="replace") if stdout else ""
         if timed_out:
             output += f"\n[ringer.py] check timed out after {CHECK_TIMEOUT_S}s\n"
@@ -8889,12 +8903,14 @@ class RingerRunner:
                 with self.lock:
                     runtime.last_check_returncode = verify.check_returncode
                     runtime.last_check_timed_out = verify.check_timed_out
-                    runtime.last_check_output = verify.raw_output_excerpt
+                    runtime.last_check_output = verify.raw_output_tail
+                    runtime.last_worker_timed_out = worker.timed_out
                     runtime.attempt_history.append({
                         "attempt": attempt,
                         "check_returncode": verify.check_returncode,
                         "check_timed_out": verify.check_timed_out,
-                        "check_output_tail": shorten(verify.raw_output_excerpt, 4000),
+                        "check_output_tail": verify.raw_output_tail[-4000:],
+                        "worker_timed_out": worker.timed_out,
                     })
                 duration_ms = int((time.monotonic() - attempt_started) * 1000)
                 self._log_attempt(runtime, current_spec, retrying, worker, verify, verdict, duration_ms)
@@ -8907,7 +8923,7 @@ class RingerRunner:
                     await self._cleanup_worktree_on_pass(runtime)
                     return
                 if attempt < max_attempts and verdict in {"FAIL", "TIMEOUT"}:
-                    failure_context = build_failure_context(runtime.log_path, verify.raw_output_excerpt)
+                    failure_context = build_failure_context(runtime.log_path, verify.raw_output_tail)
                     current_spec = (
                         f"{runtime.task.spec}\n\n"
                         f"Previous attempt failed: {failure_context}. Fix it."
@@ -9296,6 +9312,7 @@ class RingerRunner:
         notes_parts = [
             f"retry={'true' if retrying else 'false'}",
             f"worker_returncode={worker.returncode}",
+            f"worker_timed_out={str(worker.timed_out).lower()}",
             f"model={stamped_model}",
             f"task_type={runtime.task.task_type}",
         ]
@@ -9331,6 +9348,7 @@ class RingerRunner:
                 "verdict": verdict,
                 "duration_ms": duration_ms,
                 "worker_tokens": worker.tokens,
+                "worker_timed_out": worker.timed_out,
                 "notes": "\n".join(notes_parts),
                 "orchestrator": self.identity,
                 "model": stamped_model,
@@ -9460,10 +9478,12 @@ class AsyncFileCloser:
 def verdict_for(worker: WorkerResult, verify: VerifyResult) -> str:
     if worker.error:
         return "ERROR"
-    if worker.timed_out or verify.check_timed_out:
+    if verify.check_timed_out:
         return "TIMEOUT"
     if verify.ok:
         return "PASS"
+    if worker.timed_out:
+        return "TIMEOUT"
     return "FAIL"
 
 
@@ -9952,6 +9972,7 @@ def build_failure_context(log_path: Path, raw_check_output: str) -> str:
     limit = 6000
     check_context = f"CHECK OUTPUT:\n{raw_check_output}"
     if len(check_context) > limit:
+        # Keep the final diagnostic and timeout banner within the budget.
         return raw_check_output[-limit:]
     worker_label = "\n\nWORKER LOG TAIL: "
     remaining = limit - len(check_context) - len(worker_label)

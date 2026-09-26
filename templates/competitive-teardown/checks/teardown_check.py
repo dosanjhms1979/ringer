@@ -73,6 +73,27 @@ def word_count(text: str) -> int:
     return len(re.findall(r"\b[\w'-]+\b", text))
 
 
+HEADING_LEVELS = (2,)
+
+
+def heading_pattern(level: int, text: str) -> str:
+    return rf"^{'#' * level}\s+(?:\d+[.):]\s+)?{re.escape(text)}:?\s*$"
+
+
+def has_heading(text: str, heading: str) -> bool:
+    flags = re.IGNORECASE | re.MULTILINE
+    return any(re.search(heading_pattern(level, heading), text, flags) for level in HEADING_LEVELS)
+
+
+def found_headings(text: str) -> list[str]:
+    return [line.strip() for line in text.splitlines() if re.match(r"^#{1,6}\s+\S", line)]
+
+
+def missing_section(section: str, text: str) -> str:
+    found = ", ".join(found_headings(text)) or "(none)"
+    return f"missing required section: {section}; found headings: {found}"
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--report", required=True)
@@ -135,9 +156,9 @@ def main() -> int:
         if angle.lower() not in lowered:
             failures.append(f"missing required angle: {angle}")
 
-    for section in ("## Target", "## Source Log", "## Angle Findings", "## Extracted Numbers"):
-        if section.lower() not in lowered:
-            failures.append(f"missing required section: {section}")
+    for section in ("Target", "Source Log", "Angle Findings", "Extracted Numbers"):
+        if not has_heading(report, section):
+            failures.append(missing_section(f"## {section}", report))
 
     if "could not fetch" not in lowered and "fetched" not in lowered:
         failures.append("report does not record fetch status for sources")

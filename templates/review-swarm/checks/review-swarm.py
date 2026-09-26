@@ -10,6 +10,7 @@ from pathlib import Path
 MAX_WORDS = 1200
 REQUIRED_HEADINGS = ("Summary", "Findings", "Clean", "Assumptions")
 FINDING_FIELDS = ("Evidence:", "Impact:", "Fix:", "Priority:", "Confidence:")
+EVIDENCE_LABEL = re.compile(r"(?im)^\s*(evidence\s*:)")
 OPEN_PLACEHOLDER = "{" * 2
 CLOSE_PLACEHOLDER = "}" * 2
 
@@ -66,11 +67,22 @@ def validate_report(path: Path, surface: str) -> list[str]:
     elif re.search(r"^###\s+Finding:", findings, re.IGNORECASE | re.MULTILINE):
         blocks = re.split(r"(?=^###\s+Finding:)", findings, flags=re.IGNORECASE | re.MULTILINE)
         for index, block in enumerate([item for item in blocks if item.strip()], start=1):
+            evidence_match = EVIDENCE_LABEL.search(block)
             for field in FINDING_FIELDS:
-                if field.lower() not in block.lower():
+                if field == "Evidence:":
+                    missing = evidence_match is None
+                else:
+                    missing = field.lower() not in block.lower()
+                if missing:
                     failures.append(fail("finding_missing_field", f"finding {index} is missing {field}"))
-            if "Evidence:" in block and not re.search(r"\b[\w./-]+:\d+\b", block):
-                failures.append(fail("finding_missing_line", f"finding {index} evidence should cite file:line"))
+            if evidence_match is not None and not re.search(r"\b[\w./-]+:\d+\b", block):
+                written_label = evidence_match.group(1)
+                failures.append(
+                    fail(
+                        "finding_missing_line",
+                        f"finding {index} {written_label!r} should cite file:line",
+                    )
+                )
             if not re.search(r"Priority:\s*P[0-3]\b", block, re.IGNORECASE):
                 failures.append(fail("finding_bad_priority", f"finding {index} priority must be P0, P1, P2, or P3"))
             if not re.search(r"Confidence:\s*(high|medium|low)\b", block, re.IGNORECASE):

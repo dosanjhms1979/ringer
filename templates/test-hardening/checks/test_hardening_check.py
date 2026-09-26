@@ -151,7 +151,11 @@ def validate_assertions(files: list[str], assertion_pattern: str, min_per_file: 
     return ok
 
 
-def run_tests(command: str) -> tuple[bool, str]:
+def run_tests(
+    command: str,
+    baseline_failures: str = "",
+    failure_line_regex: str = r"(?im)^.*\b(FAIL|FAILED|✗|×|Error:)\b.*$",
+) -> tuple[bool, str]:
     proc = subprocess.run(
         command,
         shell=True,
@@ -164,9 +168,30 @@ def run_tests(command: str) -> tuple[bool, str]:
     )
     output = strip_ansi(proc.stdout)
     if proc.returncode != 0:
-        print(f"FAIL: TEST_COMMAND exited {proc.returncode}")
-        print(output[-4000:])
-        return False, output
+        baseline = [item.strip() for item in baseline_failures.replace("\n", ",").split(",") if item.strip()]
+        if not baseline:
+            print(f"FAIL: TEST_COMMAND exited {proc.returncode} and no --baseline-failures were supplied")
+            print(output[-4000:])
+            return False, output
+        try:
+            pattern = re.compile(failure_line_regex)
+        except re.error as exc:
+            print(f"FAIL: --failure-line-regex is not valid regex: {exc}")
+            print(output[-4000:])
+            return False, output
+        failure_lines = [match.group(0) for match in pattern.finditer(output) if match.group(0).strip()]
+        if not failure_lines:
+            print(f"FAIL: TEST_COMMAND exited {proc.returncode} with no extractable failure lines")
+            print(output[-4000:])
+            return False, output
+        new_failures = [line for line in failure_lines if not any(item in line for item in baseline)]
+        if new_failures:
+            print(f"FAIL: TEST_COMMAND exited {proc.returncode} with NEW failures:")
+            for line in new_failures[:20]:
+                print(line)
+            return False, output
+        print(f"OK: tests failed only on baseline failures ({len(failure_lines)} lines matched baseline)")
+        return True, output
     print("OK: TEST_COMMAND passed")
     print(output[-2000:])
     return True, output
@@ -225,6 +250,8 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--task-key", required=True)
     parser.add_argument("--test-command", required=True)
+    parser.add_argument("--baseline-failures", default="", help="Comma-or-newline separated substrings of known baseline failures")
+    parser.add_argument("--failure-line-regex", default=r"(?im)^.*\b(FAIL|FAILED|✗|×|Error:)\b.*$", help="Regex extracting failure lines from test output")
     parser.add_argument("--baseline-test-count", required=True)
     parser.add_argument("--test-count-regex", required=True)
     parser.add_argument("--new-test-files", required=True)
@@ -257,7 +284,7 @@ def main() -> int:
     ok = validate_new_files(new_files) and ok
     ok = validate_assertions(new_files, args.assertion_pattern, min_assertions, min_density) and ok
 
-    tests_ok, output = run_tests(args.test_command)
+    tests_ok, output = run_tests(args.test_command, args.baseline_failures, args.failure_line_regex)
     ok = tests_ok and ok
     count = parse_test_count(output, args.test_count_regex)
     if count is None:

@@ -42,8 +42,17 @@ def words(text: str) -> list[str]:
     return re.findall(r"[A-Za-z0-9_'-]+", text)
 
 
+def strip_numeric_heading_prefix(text: str) -> str:
+    return re.sub(r"^\d+[.):]\s+", "", text.strip())
+
+
 def heading_slug(text: str) -> str:
-    return re.sub(r"[^a-z0-9]+", " ", text.lower()).strip()
+    stripped = strip_numeric_heading_prefix(text)
+    return re.sub(r"[^a-z0-9]+", " ", stripped.lower()).strip()
+
+
+def found_headings(markdown: str) -> list[str]:
+    return [line.strip() for line in markdown.splitlines() if re.match(r"^#{1,6}\s+\S", line)]
 
 
 def sections(markdown: str) -> dict[str, str]:
@@ -212,7 +221,8 @@ def main() -> int:
         slug = heading_slug(section)
         body = found_sections.get(slug, "")
         if slug not in found_sections:
-            print(f"FAIL: missing required section: {section}")
+            found = ", ".join(found_headings(markdown)) or "(none)"
+            print(f"FAIL: missing required section: {section}; found headings: {found}")
             failures = True
             continue
         count = len(words(body))

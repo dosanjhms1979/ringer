@@ -9,6 +9,18 @@ import re
 import sys
 
 
+def heading_pattern(text: str) -> str:
+    return rf"^#+\s*(?:\d+[.):]\s+)?{re.escape(text)}\b:?\s*(?:\S.*)?$"
+
+
+def has_heading(text: str, heading: str) -> bool:
+    return bool(re.search(heading_pattern(heading), text, re.IGNORECASE | re.MULTILINE))
+
+
+def found_headings(text: str) -> list[str]:
+    return [line.strip() for line in text.splitlines() if re.match(r"^#+\s+\S", line)]
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--file", default="listing-copy.md")
@@ -39,8 +51,9 @@ def main() -> int:
         fails.append(f"only {words} words (need >= 250)")
     if not re.search(r"(?i)(assumption|tbd|to be measured|draft|coming soon|placeholder)", text):
         fails.append("missing honesty markers for unknown specs, prices, or policies")
-    if not re.search(r"(?im)^#+\s*about", text):
-        fails.append("missing ABOUT section")
+    if not has_heading(text, "about"):
+        found = ", ".join(found_headings(text)) or "(none)"
+        fails.append(f"missing ABOUT section; found headings: {found}")
 
     if fails:
         print("FAIL:")

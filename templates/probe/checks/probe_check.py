@@ -35,6 +35,28 @@ def section_after_marker(text: str, marker: str) -> str:
     return value.strip()
 
 
+def has_section(transcript: str, name: str) -> str:
+    """Return a named section body from a Markdown heading or colon label."""
+    escaped_name = re.escape(name)
+    start = re.compile(
+        rf"(?:^\s*#+\s+(?:\d+[.):]\s*)?{escaped_name}\s*:?\s*$"
+        rf"|^\s*{escaped_name}\s*:\s*)",
+        re.IGNORECASE | re.MULTILINE,
+    )
+    match = start.search(transcript)
+    if not match:
+        return ""
+    value = transcript[match.end():]
+    next_section = re.search(
+        r"^\s*(?:#+\s+|[A-Z][A-Z _-]{2,}:\s*)",
+        value,
+        re.IGNORECASE | re.MULTILINE,
+    )
+    if next_section:
+        value = value[:next_section.start()]
+    return value.strip()
+
+
 def contains_marker(haystack: str, marker: str) -> bool:
     marker = marker.strip()
     if not marker or marker.upper() == "NONE":
@@ -78,17 +100,19 @@ def validate_api(transcript: str, combined: str, failures: list[str]) -> None:
     lowered = combined.lower()
     if "http_status:" not in lowered and not re.search(r"\bstatus(?: code)?:\s*\d{3}", lowered):
         failures.append("api mode requires HTTP_STATUS or a status code")
-    if "observed behavior:" not in transcript.lower():
-        failures.append("api transcript missing OBSERVED BEHAVIOR")
-    if "verdict:" not in transcript.lower():
-        failures.append("api transcript missing VERDICT")
+    for name in ("Observed Behavior", "Verdict"):
+        if not has_section(transcript, name):
+            failures.append(
+                f'missing {name} — write a "## {name}" heading or a "{name.upper()}:" label'
+            )
 
 
 def validate_postmortem(transcript: str, failures: list[str]) -> None:
-    lowered = transcript.lower()
-    for marker in ("failure observed:", "evidence:", "likely cause:", "next check:", "verdict:"):
-        if marker not in lowered:
-            failures.append(f"postmortem transcript missing {marker}")
+    for name in ("Failure Observed", "Evidence", "Likely Cause", "Next Check", "Verdict"):
+        if not has_section(transcript, name):
+            failures.append(
+                f'missing {name} — write a "## {name}" heading or a "{name.upper()}:" label'
+            )
 
 
 def validate_generic(transcript: str, failures: list[str]) -> None:
