@@ -154,7 +154,7 @@ def validate_assertions(files: list[str], assertion_pattern: str, min_per_file: 
 def run_tests(
     command: str,
     baseline_failures: str = "",
-    failure_line_regex: str = r"(?im)^.*\b(FAIL|FAILED|✗|×|Error:)\b.*$",
+    failure_line_regex: str = r"(?m)^[ \t]*(?:[✗×●]|FAIL(?:ED)?\b|ERROR\b|E[ \t]|not ok\b|\d+\)[ \t]|--- FAIL|\w*(?:Error|Exception):|.* › ).*$",
 ) -> tuple[bool, str]:
     proc = subprocess.run(
         command,
@@ -173,6 +173,11 @@ def run_tests(
             print(f"FAIL: TEST_COMMAND exited {proc.returncode} and no --baseline-failures were supplied")
             print(output[-4000:])
             return False, output
+        short = [item for item in baseline if len(item) < 6]
+        if short:
+            for item in short:
+                print(f"FAIL: --baseline-failures entry {item!r} is too short (minimum 6 characters); it would whitelist unrelated failures")
+            return False, output
         try:
             pattern = re.compile(failure_line_regex)
         except re.error as exc:
@@ -190,6 +195,11 @@ def run_tests(
             for line in new_failures[:20]:
                 print(line)
             return False, output
+        if len(failure_lines) >= 3:
+            broad = [item for item in baseline if len(item) < 20 and all(item in line for line in failure_lines)]
+            if broad:
+                print(f"FAIL: baseline entry {broad[0]!r} matches every failure line — too broad")
+                return False, output
         print(f"OK: tests failed only on baseline failures ({len(failure_lines)} lines matched baseline)")
         return True, output
     print("OK: TEST_COMMAND passed")
@@ -251,7 +261,7 @@ def main() -> int:
     parser.add_argument("--task-key", required=True)
     parser.add_argument("--test-command", required=True)
     parser.add_argument("--baseline-failures", default="", help="Comma-or-newline separated substrings of known baseline failures")
-    parser.add_argument("--failure-line-regex", default=r"(?im)^.*\b(FAIL|FAILED|✗|×|Error:)\b.*$", help="Regex extracting failure lines from test output")
+    parser.add_argument("--failure-line-regex", default=r"(?m)^[ \t]*(?:[✗×●]|FAIL(?:ED)?\b|ERROR\b|E[ \t]|not ok\b|\d+\)[ \t]|--- FAIL|\w*(?:Error|Exception):|.* › ).*$", help="Regex extracting failure lines from test output")
     parser.add_argument("--baseline-test-count", required=True)
     parser.add_argument("--test-count-regex", required=True)
     parser.add_argument("--new-test-files", required=True)

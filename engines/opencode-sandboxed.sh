@@ -5,7 +5,15 @@
 # flag (required for headless runs) disables ALL of its interactive approval
 # prompts. This wrapper supplies the real containment: full network and reads,
 # writes confined to the task dir, a per-run scratch/cache dir, and OpenCode's
-# own state dirs.
+# own state/share dirs.
+#
+# 2026-09-26: ~/.config/opencode is READ-ONLY inside the sandbox, and the
+# plugins/ and commands/ subdirs of ~/.local/share/opencode are write-denied.
+# OpenCode loads plugins, custom commands and MCP config from those paths at
+# startup, so a worker that could write there would persist code into every
+# later session — an escape across the sandbox boundary. OpenCode does not need
+# to write its config during a run; auth refresh and session state still go to
+# the (writable) share/state dirs.
 #
 # Usage (as a ringer engine bin):
 #   opencode-sandboxed.sh <taskdir> [--no-sandbox] <opencode args...>
@@ -58,8 +66,14 @@ cat > "$PROFILE" <<'SBEOF'
   (subpath (param "TASKDIR"))
   (subpath (param "SCRATCH"))
   (subpath (param "OC_SHARE"))
-  (subpath (param "OC_STATE"))
-  (subpath (param "OC_CONFIG")))
+  (subpath (param "OC_STATE")))
+; Persistence guard (2026-09-26): later rules win in Seatbelt, so these denies
+; override the allows above. Config (plugins, commands, MCP servers) is
+; read-only; plugin/command dirs under the share root are also denied.
+(deny file-write*
+  (subpath (param "OC_CONFIG"))
+  (subpath (string-append (param "OC_SHARE") "/plugins"))
+  (subpath (string-append (param "OC_SHARE") "/commands")))
 ; /dev is needed for /dev/null, /dev/urandom, etc.; writes there can't create
 ; persistent files without root, so a few literals are allowed rather than via param.
 (allow file-write-data

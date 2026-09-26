@@ -101,21 +101,22 @@ class OutputHygieneTests(unittest.TestCase):
         self.assertIn('unrecognized crash', result.stdout)
 
     def test_multiple_baseline_separators_and_custom_regex(self):
-        result = self.run_feature('broken: alpha\nbroken: beta\nbroken: gamma',
-                                  '--baseline-failures', 'alpha,beta\ngamma',
+        # Baseline entries must be >= 6 chars (too-short entries whitelist unrelated failures).
+        result = self.run_feature('broken: alpha-one\nbroken: beta-two\nbroken: gamma-three',
+                                  '--baseline-failures', 'alpha-one,beta-two\ngamma-three',
                                   '--failure-line-regex', r'(?m)^broken:.*$')
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn('3 lines matched baseline', result.stdout)
 
     def test_mixed_failures_report_only_new_lines_up_to_twenty(self):
-        output = 'FAIL known\n' + '\n'.join(f'FAIL new-{i}' for i in range(25))
-        result = self.run_feature(output, '--baseline-failures', 'known')
+        output = 'FAIL known-red\n' + '\n'.join(f'FAIL new-{i}' for i in range(25))
+        result = self.run_feature(output, '--baseline-failures', 'known-red')
         self.assertEqual(result.returncode, 1)
         reported = result.stdout.split('NEW failures:\n', 1)[1].splitlines()
         self.assertEqual(reported, [f'FAIL new-{i}' for i in range(20)])
 
     def test_invalid_regex_fails_cleanly(self):
-        result = self.run_feature('FAIL known', '--baseline-failures', 'known', '--failure-line-regex', '[')
+        result = self.run_feature('FAIL known-red', '--baseline-failures', 'known-red', '--failure-line-regex', '[')
         self.assertEqual(result.returncode, 1)
         self.assertIn('not valid regex', result.stdout)
         self.assertNotIn('Traceback', result.stderr)

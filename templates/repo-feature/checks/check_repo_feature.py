@@ -41,7 +41,7 @@ def main() -> int:
     parser.add_argument("--required-text", default="", help="Comma-separated text snippets that must appear somewhere in owned files")
     parser.add_argument("--build-command", required=True)
     parser.add_argument("--baseline-failures", default="", help="Comma-or-newline separated substrings of known baseline failures")
-    parser.add_argument("--failure-line-regex", default=r"(?im)^.*\b(FAIL|FAILED|✗|×|Error:)\b.*$", help="Regex extracting failure lines from build/test output")
+    parser.add_argument("--failure-line-regex", default=r"(?m)^[ \t]*(?:[✗×●]|FAIL(?:ED)?\b|ERROR\b|E[ \t]|not ok\b|\d+\)[ \t]|--- FAIL|\w*(?:Error|Exception):|.* › ).*$", help="Regex extracting failure lines from build/test output")
     parser.add_argument("--notes", default="notes.md")
     args = parser.parse_args()
 
@@ -97,6 +97,11 @@ def main() -> int:
             print("FAIL: build/test command failed")
             print(output[-7000:])
             return 1
+        short = [item for item in baseline if len(item) < 6]
+        if short:
+            for item in short:
+                print(f"FAIL: --baseline-failures entry {item!r} is too short (minimum 6 characters); it would whitelist unrelated failures")
+            return 1
         try:
             pattern = re.compile(args.failure_line_regex)
         except re.error as exc:
@@ -114,6 +119,11 @@ def main() -> int:
             for line in new_failures[:20]:
                 print(line)
             return 1
+        if len(failure_lines) >= 3:
+            broad = [item for item in baseline if len(item) < 20 and all(item in line for line in failure_lines)]
+            if broad:
+                print(f"FAIL: baseline entry {broad[0]!r} matches every failure line — too broad")
+                return 1
         print(f"OK: build failed only on baseline failures ({len(failure_lines)} lines matched baseline)")
     print(output[-3000:])
 

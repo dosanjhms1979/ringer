@@ -1949,6 +1949,19 @@ def lint_manifest(
                 f"{task.key}: no task_type; the model log buckets this as (untyped) — "
                 "name one (e.g. code-feature, research, image-gen) so './ringer.py models' can guide routing."
             )
+        if config is not None:
+            lint_engine = config.engines.get(task.engine)
+        elif task.engine == DEFAULT_ENGINE_NAME:
+            lint_engine = built_in_codex_engine()
+        else:
+            lint_engine = None
+        full_access_tokens = engine_args_full_access_tokens(task.engine_args, lint_engine)
+        if full_access_tokens and not task.full_access:
+            findings.append(
+                f"{task.key}: engine_args_full_access: engine_args {full_access_tokens!r} "
+                "grant full access without full_access=true; the run will refuse this "
+                "task unless it sets full_access and config allow_full_access is true."
+            )
 
     if len(manifest.tasks) >= 3 and manifest.max_parallel == 1:
         findings.append("manifest: tasks will run serially; set max_parallel.")
@@ -9131,6 +9144,18 @@ class RingerRunner:
                     "but config allow_full_access is false"
                 ),
             )
+        engine_args_error = engine_args_full_access_error(
+            runtime.task,
+            engine,
+            allow_full_access=self.config.allow_full_access,
+        )
+        if engine_args_error is not None:
+            return WorkerResult(
+                returncode=None,
+                timed_out=False,
+                tokens=None,
+                error=engine_args_error,
+            )
         cmd = build_worker_command(
             engine,
             taskdir=runtime.taskdir,
@@ -9619,6 +9644,59 @@ def resolved_task_model(
         task.model
         or (engine.model_default if engine else "")
         or effective_model_from_command(command or [])
+    )
+
+
+# Engine flags that escape the worker sandbox. A task may only pass them
+# through engine_args when it also sets full_access and the config allows it;
+# otherwise engine_args would be a side door around the full-access gate.
+ENGINE_ARGS_FULL_ACCESS_PREFIXES = (
+    "--dangerously",
+    "--no-sandbox",
+    "--sandbox=disabled",
+    "--yolo",
+    "--force",
+    "--bypass",
+)
+ENGINE_ARGS_FULL_ACCESS_SUBSTRINGS = ("danger-full-access",)
+
+
+def engine_args_full_access_tokens(
+    engine_args: Iterable[str],
+    engine: EngineConfig | None,
+) -> list[str]:
+    """Return the engine_args tokens that would grant full access."""
+    engine_tokens: set[str] = set()
+    if engine is not None:
+        engine_tokens = set(engine.full_access_args) - set(engine.sandbox_args)
+    offending: list[str] = []
+    for token in engine_args:
+        lowered = token.strip().lower()
+        if (
+            token in engine_tokens
+            or lowered.startswith(ENGINE_ARGS_FULL_ACCESS_PREFIXES)
+            or any(part in lowered for part in ENGINE_ARGS_FULL_ACCESS_SUBSTRINGS)
+        ):
+            offending.append(token)
+    return offending
+
+
+def engine_args_full_access_error(
+    task: TaskSpec,
+    engine: EngineConfig | None,
+    *,
+    allow_full_access: bool,
+) -> str | None:
+    """Setup error when engine_args smuggle a full-access flag past the gate."""
+    if task.full_access and allow_full_access:
+        return None
+    offending = engine_args_full_access_tokens(task.engine_args, engine)
+    if not offending:
+        return None
+    return (
+        f"task engine_args {offending[0]!r} grants full access with engine "
+        f"{task.engine}; engine_args full-access flags require task full_access=true "
+        "and config allow_full_access=true"
     )
 
 
@@ -10195,6 +10273,10 @@ def dry_run(
             print("    command: ERROR unknown engine")
         elif task.full_access and not config.allow_full_access:
             print("    command: ERROR full_access requires allow_full_access=true in config")
+        elif engine_args_error := engine_args_full_access_error(
+            task, engine, allow_full_access=config.allow_full_access
+        ):
+            print(f"    command: ERROR {engine_args_error}")
         else:
             print(f"    command: {shell_command_for_display(cmd)} < /dev/null")
 

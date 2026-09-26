@@ -649,3 +649,29 @@ checks and raw logs support — no vibes, no worker self-reports.
   to 2–3 and never let Ringer's automatic retry fire into a 429 — it burned
   attempt 2 on all four. Both runs relaunched after the reset (fix swarm at
   max_parallel 2).
+
+## 2026-09-26 — review-fixes-3 fix swarm (Claude lineup, code-fix), 3 tasks, all PASS first try on the third launch
+
+- Launch 1 died on the claude.ai session limit, launch 2 on the worktrees it
+  left behind (`worktree taskdir already exists` — clean up before relaunch);
+  launch 3 at max_parallel 2: 3/3 first try. Patches applied; full suite 349
+  green after three fixture renames in tests/test_template_check_output_hygiene.py
+  (baseline entries under the new 6-char minimum — the Sonnet task's verify
+  command ran only its own module, so the orchestrator suite run caught it;
+  put the FULL suite in every ringer.py/template verify command).
+- claude-opus-5-5, code-fix: engine_args full-access gate in ringer.py
+  (engine full_access_args tokens + a prefix denylist rejected unless
+  full_access && allow_full_access; lint finding engine_args_full_access;
+  tests). Clean, well-scoped. First try.
+- claude-sonnet-5, code-fix: failure-line regex rewritten without \b around
+  symbols (vitest/jest/pytest/unittest/tap/go formats), baseline entries
+  validated (min 6 chars; a <20-char entry matching every failure line is
+  "too broad"); READMEs updated; tests. First try.
+- claude-fable-5-1, code-fix: Seatbelt profile makes ~/.config/opencode
+  read-only and denies writes to share/plugins and share/commands (later
+  rules win); tests/test_opencode_sandbox_profile.py extracts the SBPL
+  heredoc and drives sandbox-exec on temp dirs — it SKIPS under a nested
+  sandbox (the worker's own run), so the orchestrator re-ran it unsandboxed:
+  11/11 real. First try.
+- Inline (orchestrator, config only): claude engine gains --strict-mcp-config
+  so workers never inherit the user's MCP servers (Opus review finding).
