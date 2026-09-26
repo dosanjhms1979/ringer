@@ -719,6 +719,8 @@ checks and raw logs support — no vibes, no worker self-reports.
   tree), the claude.ai 429 wall, the Grok Build free-tier wall, the stale
   worktree setup errors, and the gpt-6-sol unavailable slug. Every row names
   its reason and points here. Tiers after: Fable 5.1 / Opus 5.5 / Sonnet 5 /
-  Haiku 4.5 / Grok 4.7 (Cursor) PROVEN on code-review; Astra, 5.6 Sol, Grok
-  4.7, Sonnet PROVEN on code-fix; Fable and Opus need one more real code-fix.
+  Haiku 4.5 / Grok 4.7 (Cursor) PROVEN on code-review; Astra, 5.6 Sol and Grok
+  4.7 PROVEN on code-fix; Fable 1/1, Opus 1/1, Sonnet 2/2 on code-fix at 100%
+  first try but under the 3-task minimum — real fixes (AE-54, the remaining
+  P2 review findings) close that.
   Haiku's genuine engine-wrappers failure was left standing.
