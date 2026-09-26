@@ -692,3 +692,12 @@ checks and raw logs support — no vibes, no worker self-reports.
   "orchestrator check defect" so it is excluded from first-try tiers without
   editing history — today the only remedy is this notes file, and four
   Claude models' tiers were distorted by it in one day.
+
+## GLM 5.3 Flash (opencode, OpenRouter) — 2026-09-26 validation
+
+- Kiran asked for "GLM 4.3 Flash"; no such slug exists on OpenRouter (Flash
+  lineup: glm-5.3-flash, glm-4.7-flash, ~glm-flash-latest). Validated
+  glm-5.3-flash: probe PASS first try, 53s, 13.9k tokens, self-reports the
+  slug. At $0.04/$0.14 per M with 1.3M context it is the exploration lane
+  for low-stakes docs/mechanical work — untested on real tasks; small models
+  choke first on long harness tasks, so audition it on ONE task per batch.
