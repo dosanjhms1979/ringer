@@ -450,3 +450,21 @@ checks and raw logs support — no vibes, no worker self-reports.
   JSON is pretty-printed in this version, so re-check model_report_regex.
   Token burn on a trivial echo task is the 4.6 story repeated: expensive
   third-opinion lane, not a first-choice worker.
+
+## GPT-5.6 Sol (codex) — 2026-09-26 re-validation
+
+- Probe (run new-model-probes-2026-09-26): PASS first try twice, 32k and 16k
+  tokens, ~27s. Worker log header reads model: gpt-5.6-sol. Available on the
+  ChatGPT-plan Codex catalog alongside Astra; route per task with "model".
+
+## GLM 5.3 (opencode, OpenRouter) — first validation
+
+- 2026-09-26 — probe: opencode 1.18.15 (Homebrew) rejected BOTH glm-5.3 and
+  glm-5.3-flash with "Unexpected server error" in ~2s while glm-5.2 passed —
+  its bundled model list stopped at 5.2 even though models.dev had 5.3.
+  `brew upgrade opencode` (1.18.15 -> 1.18.32) fixed it: glm-5.3 PASS first
+  try, 21.6k tokens, 33s, self-reports z-ai/glm-5.3. Lesson: a fast
+  "Unexpected server error" from opencode on a NEW slug means upgrade the
+  CLI, not the model. Pricing (OpenRouter, 2026-09-26): glm-5.3 $1.40/$4.40
+  per M vs glm-5.2 $0.65/$2.04; glm-5.3-flash $0.04/$0.14 (price cut today,
+  1.3M ctx) is the exploration candidate for low-stakes lanes — untested yet.
