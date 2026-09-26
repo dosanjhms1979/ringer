@@ -52,7 +52,7 @@ last_verified = 2026-09-12
 [engines.grok]
 harness = "Grok Build CLI"
 access = "OAuth plan"
-default_model_key = "grok-4.6"
+default_model_key = "grok-4.7"
 
 [engines.grok.models."grok-build"]
 # "Grok Build" is the HARNESS (the CLI product), never a model name. The CLI
@@ -85,6 +85,20 @@ lab = "SpaceXAI"
 confidence = "verified"
 source = "https://docs.x.ai/developers/release-notes"
 last_verified = 2026-09-12
+
+[engines.grok.models."grok-4.7"]
+# 2026-09-26: after `grok login --device-auth`, Grok Build CLI v1.0.13
+# `grok models` lists grok-4.7 as the SOLE available model and the default;
+# grok-4.6 is gone from the signed-in listing. config.toml pins
+# model_default = "grok-4.7". Worker JSON self-reports "grok-4.7" in
+# modelUsage (run grok-4.7-engine-probe). Lab follows the grok-4.6 entry's
+# release-notes wording; confidence stays "provisional" until the release
+# note for 4.7 is read.
+display = "Grok 4.7"
+lab = "SpaceXAI"
+confidence = "provisional"
+source = "https://docs.x.ai/developers/release-notes"
+last_verified = 2026-09-26
 
 [engines.opencode]
 harness = "OpenCode"

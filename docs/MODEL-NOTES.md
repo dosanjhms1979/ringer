@@ -483,3 +483,22 @@ checks and raw logs support — no vibes, no worker self-reports.
   23k tokens, 100s) and URLs (27k, 123s). Both first try; the URL patch also
   fixed a latent char-class escaping bug in URL_RE that the spec did not ask
   for — correct, and noted here so the change is not a surprise.
+
+## Grok 4.7 — 2026-09-26 proving run hit a QUOTA WALL, not a model failure
+
+- Run proving-astra-grok47: three read-only code-review lanes over the
+  ringer repo all FAILED both attempts with NO report.md. Every worker log
+  ends in the same harness error: "You've reached your free Grok Build usage
+  limit for now. Get SuperGrok for much higher limits". The account signed
+  in today is on the FREE tier (the 2026-09-12 note assumed SuperGrok /
+  Premium+). Total spend before the wall: ~$0.34 across three lanes. The
+  three FAIL rows in the scoreboard for grok-4.7/code-review are quota
+  failures and must not be read as evidence about the model. Rule from the
+  playbook applies: never retry into a limit — Ringer's automatic retry
+  burned attempt 2 on all three. Do not schedule grok-4.7 lanes again until
+  the plan is confirmed; then re-run the same three review specs.
+- Same run, gpt-6-astra research (OpenCode 1.18.32 compatibility): PASS
+  first try, 11k tokens, 70s — and the report is genuinely useful: the
+  `--dangerously-skip-permissions` flag Ringer passes is undocumented on
+  1.18.32 (`--auto` is the documented replacement, which preserves explicit
+  denials). This makes Astra PROVEN on research (3/4 first try).
