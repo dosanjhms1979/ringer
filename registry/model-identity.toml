@@ -100,6 +100,25 @@ confidence = "provisional"
 source = "https://docs.x.ai/developers/release-notes"
 last_verified = 2026-09-26
 
+[engines.cursor]
+harness = "Cursor CLI"
+access = "Cursor plan"
+# Added 2026-09-26. Cursor's `agent` CLI serves many labs' models; the model
+# key is the manifest "model" slug from `agent --list-models`. This is a
+# SEPARATE harness row from Grok Build on purpose: same trained artifact, but
+# different sandbox, billing, and effort routing, so the evidence stays apart.
+default_model_key = "grok-4.7-high"
+
+[engines.cursor.models."grok-4.7-high"]
+# `agent --list-models` (2026-09-26): "grok-4.7-high - Grok 4.7 High". The
+# -low/-medium/-xhigh and -fast variants are effort/speed routes to the same
+# model; register them here if they earn rows.
+display = "Grok 4.7"
+lab = "SpaceXAI"
+confidence = "provisional"
+source = "https://cursor.com/docs/models"
+last_verified = 2026-09-26
+
 [engines.opencode]
 harness = "OpenCode"
 access = "OpenRouter API"

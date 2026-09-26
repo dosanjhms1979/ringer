@@ -502,3 +502,13 @@ checks and raw logs support — no vibes, no worker self-reports.
   `--dangerously-skip-permissions` flag Ringer passes is undocumented on
   1.18.32 (`--auto` is the documented replacement, which preserves explicit
   denials). This makes Astra PROVEN on research (3/4 first try).
+
+## Grok 4.7 via Cursor CLI (engine `cursor`, Cursor plan) — added 2026-09-26
+
+- Why a second route: the Grok Build account is free-tier and walled. Kiran's
+  Cursor subscription lists grok-4.7-{low,medium,high,xhigh}[-fast]. Cursor's
+  `agent -p --output-format json --force --sandbox enabled` runs headless.
+- Probe (run cursor-grok-4.7-engine-probe): PASS first try, 58s API time,
+  usage inputTokens 45,827 / outputTokens 2,902 / cacheRead 76,928. The JSON
+  has no total-tokens field and no model self-report; scoreboard tokens for
+  this engine = input tokens only. Billing is plan-included (no cost field).
