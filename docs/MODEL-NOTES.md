@@ -574,3 +574,8 @@ checks and raw logs support — no vibes, no worker self-reports.
   usage figure; read the worker log for the full usage object.
 - Fable via Cursor stays gated on the data-policy acknowledgement; not needed
   now that the Anthropic route works.
+- Same day, same engine: Claude Sonnet 5 (claude-sonnet-5) PASS first try,
+  15s, output 991, notional 0.14; Claude Haiku 4.5 (claude-haiku-4-5-20251001)
+  PASS first try, 18s, output 1,068, notional 0.05. Haiku is the cheap fast
+  lane for mechanical/docs work on this account; validate on a real task
+  before scaling (small models choke first on long multi-turn harness tasks).

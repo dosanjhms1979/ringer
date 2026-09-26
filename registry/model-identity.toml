@@ -158,6 +158,20 @@ confidence = "provisional"
 source = "https://docs.claude.com/en/docs/about-claude/models"
 last_verified = 2026-09-26
 
+[engines.claude.models."claude-sonnet-5"]
+display = "Claude Sonnet 5"
+lab = "Anthropic"
+confidence = "provisional"
+source = "https://docs.claude.com/en/docs/about-claude/models"
+last_verified = 2026-09-26
+
+[engines.claude.models."claude-haiku-4-5-20251001"]
+display = "Claude Haiku 4.5"
+lab = "Anthropic"
+confidence = "provisional"
+source = "https://docs.claude.com/en/docs/about-claude/models"
+last_verified = 2026-09-26
+
 [engines.opencode]
 harness = "OpenCode"
 access = "OpenRouter API"
