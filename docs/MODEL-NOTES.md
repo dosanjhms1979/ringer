@@ -579,3 +579,33 @@ checks and raw logs support — no vibes, no worker self-reports.
   PASS first try, 18s, output 1,068, notional 0.05. Haiku is the cheap fast
   lane for mechanical/docs work on this account; validate on a real task
   before scaling (small models choke first on long multi-turn harness tasks).
+
+## GPT-6 Astra, code-feature — AE-53 (run ae-53, 2026-09-26), two serial tasks on the Exam Prep repo
+
+- lc-older-layouts: the REAL work landed on round-1 attempt 1 (nine older
+  Year 5/7/9 language-conventions papers went from 0 to 43–57 items each, 451
+  total; 12pt position-ordered labels + 8pt answer-box labels found by the
+  layout probe; synthetic regression tests added). Round 1 recorded TWO FAILs
+  for it: my check's vitest gate ran AFTER the bank floor, so the baseline
+  never exercised it and a test already red at HEAD (AE-51 removed the 2016
+  skip it looks for) failed honest work twice. Round 2 (same run_name, fixed
+  check with a named HEAD-baseline test): PASS attempt 1. Scoreboard: 1 false
+  FAIL pair + 1 true PASS. Orchestrator spot check: 13/13 recovered items
+  match the official answer cells (spelling write-ins and MCQ, 3 papers).
+- numeracy-2013-y3-and-reading-2013: PASS on attempt 2, and attempt 1 was
+  also my check — cross-task ownership guard + skipped.json comparison on a
+  SHARED serial tree flagged the LC task's legitimate edits, and paper_of()
+  did not recognise HEAD's doubled-prefix skip ids. The worker's finding was
+  right and honest: the 2013 Y3 numeracy PDF has NO text layer (orchestrator
+  probe: 6 tokens in 16 pages vs 300+/paper in 2012/2014), so it stays skipped
+  whole with a raster-specific reason for all 35 questions; the 15-item floor
+  was unattainable without OCR and the check now accepts the honest form.
+  Reading 2013 Y5/Y7: 9 items recovered (split "r"+"ead" instruction tokens
+  and fragmented END OF TEST leaking into options), 3 genuine limits kept
+  skipped with reasons; orchestrator spot check 9/9 against the answer table.
+- CHECK LESSONS (mine, all three cost Astra a false FAIL): (1) run every
+  unchanged-behaviour tool gate BEFORE the first new-behaviour floor so the
+  baseline exercises it; (2) on a shared serial tree, judge only THIS task's
+  papers and let the sibling task's edits stand; (3) match target papers by
+  id prefix, never by splitting on "-q"; (4) a floor that assumes a text layer
+  must accept an honest whole-paper skip with a specific reason.

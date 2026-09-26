@@ -7,7 +7,10 @@ import sys
 from pathlib import Path
 
 
-MAX_WORDS = 1200
+# 2026-09-26: raised from 1200. A thorough review of a wide surface (four engine wrappers +
+# config) legitimately runs longer, and a length cap is a FORMAT rule — strict on substance,
+# tolerant on format. If a spec wants a tighter brief, say so in the spec.
+MAX_WORDS = 2500
 REQUIRED_HEADINGS = ("Summary", "Findings", "Clean", "Assumptions")
 FINDING_FIELDS = ("Evidence:", "Impact:", "Fix:", "Priority:", "Confidence:")
 EVIDENCE_LABEL = re.compile(r"(?im)^\s*(evidence\s*:)")
