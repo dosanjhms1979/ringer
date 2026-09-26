@@ -15,6 +15,7 @@ Use this for narrowly scoped app pages, route additions, component changes, scri
 | Placeholder | What goes there |
 |---|---|
 | `{{ALLOWED_STATUS_PATHS_CSV}}` | Additional pre-existing or explicitly allowed git-status paths, comma-separated. |
+| `{{BASELINE_FAILURES — substrings of test names that already fail at HEAD in the sandbox, or empty}}` | Comma-or-newline separated known failure substrings; empty requires a passing build. |
 | `{{BUILD_OR_TEST_COMMAND}}` | Real repo verification command, such as `npm run build` or `pytest`. |
 | `{{CONVENTION_FILES}}` | Read-only files the worker should inspect before editing. |
 | `{{ENGINE_BUILD}}` | Engine name for the repo-edit worker. |
@@ -32,7 +33,13 @@ Use this for narrowly scoped app pages, route additions, component changes, scri
 
 ## Checks
 
-The check verifies four things: `notes.md` exists in the scratch task directory, required repo paths exist, required text appears in owned files, the configured build/test command passes, and `git status --porcelain` contains only owned or allowlisted paths.
+The check verifies these things: `notes.md` exists in the scratch task directory, required repo paths exist, required text appears in owned files, the configured build/test command passes or matches known baseline failures, and `git status --porcelain` contains only owned or allowlisted paths.
+
+Use `--baseline-failures` to supply comma-or-newline separated substrings of test names already failing at HEAD in the same sandbox. It defaults to empty, so non-zero build exits fail unless a baseline is supplied. With a baseline, every extracted failure line must contain at least one supplied substring; new failures are reported (up to 20 lines), and a non-zero exit with no extractable failure lines always fails with the output tail.
+
+`--failure-line-regex` optionally overrides the failure extraction regex, whose default is `(?im)^.*\b(FAIL|FAILED|✗|×|Error:)\b.*$`. Match full failure lines for your runner and keep baseline substrings specific enough to distinguish new failures. Build/test output is stripped of ANSI escapes before matching and printing.
+
+Checks should exercise one real invocation from a cold shell (not just `--help`), because a `--help`-only assertion missed a runtime import bug on 2026-07-15.
 
 This cannot be gamed by creating a loose artifact in the task directory because the real repo command executes in `{{REPO_PATH}}` and the git porcelain check catches unrelated edits.
 

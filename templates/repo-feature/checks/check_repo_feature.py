@@ -4,9 +4,15 @@
 from __future__ import annotations
 
 import argparse
+import os
 import pathlib
+import re
 import subprocess
 import sys
+
+
+def strip_ansi(text: str) -> str:
+    return re.sub(r"\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07]*\x07", "", text)
 
 
 def split_csv(value: str) -> list[str]:
@@ -34,6 +40,8 @@ def main() -> int:
     parser.add_argument("--required-paths", default="", help="Comma-separated repo paths that must exist")
     parser.add_argument("--required-text", default="", help="Comma-separated text snippets that must appear somewhere in owned files")
     parser.add_argument("--build-command", required=True)
+    parser.add_argument("--baseline-failures", default="", help="Comma-or-newline separated substrings of known baseline failures")
+    parser.add_argument("--failure-line-regex", default=r"(?im)^.*\b(FAIL|FAILED|✗|×|Error:)\b.*$", help="Regex extracting failure lines from build/test output")
     parser.add_argument("--notes", default="notes.md")
     args = parser.parse_args()
 
@@ -77,15 +85,37 @@ def main() -> int:
                 fails.append(f"required text not found in owned files: {snippet!r}")
 
     print(f"running build/test command in {repo}: {args.build_command}")
-    proc = subprocess.run(args.build_command, cwd=repo, shell=True, capture_output=True, text=True, timeout=1800)
+    proc = subprocess.run(
+        args.build_command, cwd=repo, shell=True, stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT, text=True, timeout=1800,
+        env={**os.environ, "NO_COLOR": "1", "FORCE_COLOR": "0", "TERM": "dumb"},
+    )
+    output = strip_ansi(proc.stdout)
     if proc.returncode != 0:
-        print("FAIL: build/test command failed")
-        print(proc.stdout[-4000:])
-        print(proc.stderr[-3000:])
-        return 1
-    print(proc.stdout[-2000:])
-    if proc.stderr.strip():
-        print(proc.stderr[-1000:])
+        baseline = split_csv(args.baseline_failures.replace("\n", ","))
+        if not baseline:
+            print("FAIL: build/test command failed")
+            print(output[-7000:])
+            return 1
+        try:
+            pattern = re.compile(args.failure_line_regex)
+        except re.error as exc:
+            print(f"FAIL: --failure-line-regex is not valid regex: {exc}")
+            print(output[-7000:])
+            return 1
+        failure_lines = [match.group(0) for match in pattern.finditer(output) if match.group(0).strip()]
+        if not failure_lines:
+            print("FAIL: build/test command failed with no extractable failure lines")
+            print(output[-7000:])
+            return 1
+        new_failures = [line for line in failure_lines if not any(item in line for item in baseline)]
+        if new_failures:
+            print("FAIL: build/test command failed with NEW failures:")
+            for line in new_failures[:20]:
+                print(line)
+            return 1
+        print(f"OK: build failed only on baseline failures ({len(failure_lines)} lines matched baseline)")
+    print(output[-3000:])
 
     status = subprocess.run(["git", "status", "--porcelain"], cwd=repo, capture_output=True, text=True, timeout=60)
     if status.returncode != 0:
@@ -104,7 +134,7 @@ def main() -> int:
         for fail in fails:
             print(f" - {fail}")
         return 1
-    print("PASS: notes exist, content assertions passed, build/tests passed, and git status is allowlisted")
+    print("PASS: notes exist, content assertions passed, build/tests passed or matched baseline, and git status is allowlisted")
     return 0
 
 

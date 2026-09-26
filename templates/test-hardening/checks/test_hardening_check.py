@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import re
 import subprocess
 import sys
@@ -11,13 +12,17 @@ from pathlib import Path
 
 
 AUTO_TEST_COUNT_PATTERNS = [
-    r"Tests:\s+.*?(\d+)\s+passed",
+    r"Tests:?\s+.*?(\d+)\s+passed",
     r"Test Files\s+.*?(\d+)\s+passed",
     r"(\d+)\s+passed(?:,|\s+in|\s*$)",
     r"collected\s+(\d+)\s+items?",
     r"Ran\s+(\d+)\s+tests?",
     r"(\d+)\s+passing",
 ]
+
+
+def strip_ansi(text: str) -> str:
+    return re.sub(r"\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07]*\x07", "", text)
 
 
 def split_list(value: str) -> list[str]:
@@ -155,8 +160,9 @@ def run_tests(command: str) -> tuple[bool, str]:
         stderr=subprocess.STDOUT,
         check=False,
         timeout=1200,
+        env={**os.environ, "NO_COLOR": "1", "FORCE_COLOR": "0", "TERM": "dumb"},
     )
-    output = proc.stdout
+    output = strip_ansi(proc.stdout)
     if proc.returncode != 0:
         print(f"FAIL: TEST_COMMAND exited {proc.returncode}")
         print(output[-4000:])
@@ -167,6 +173,7 @@ def run_tests(command: str) -> tuple[bool, str]:
 
 
 def parse_test_count(output: str, regex: str) -> int | None:
+    output = strip_ansi(output)
     patterns = AUTO_TEST_COUNT_PATTERNS if regex.strip().upper() == "AUTO" else [regex]
     matches: list[int] = []
     for pattern in patterns:

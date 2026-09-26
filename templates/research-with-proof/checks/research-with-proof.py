@@ -35,8 +35,12 @@ def output_tail(text: str, limit: int = 4000) -> str:
     return text[-limit:]
 
 
+def heading_pattern(level: int, text: str) -> str:
+    return rf"^{'#' * level}\s+(?:\d+[.):]\s+)?{re.escape(text)}:?\s*$"
+
+
 def has_heading(text: str, heading: str) -> bool:
-    return bool(re.search(rf"^##\s+{re.escape(heading)}\s*$", text, re.IGNORECASE | re.MULTILINE))
+    return bool(re.search(heading_pattern(2, heading), text, re.IGNORECASE | re.MULTILINE))
 
 
 def validate_research(args: argparse.Namespace) -> list[str]:
@@ -49,7 +53,7 @@ def validate_research(args: argparse.Namespace) -> list[str]:
     text = report.read_text(encoding="utf-8", errors="replace")
     if word_count(text) > MAX_RESEARCH_WORDS:
         failures.append(fail("too_long", f"report exceeds {MAX_RESEARCH_WORDS} words"))
-    if not re.search(r"^#\s+Research Report\s*$", text, re.IGNORECASE | re.MULTILINE):
+    if not re.search(heading_pattern(1, "Research Report"), text, re.IGNORECASE | re.MULTILINE):
         failures.append(fail("missing_title", "report.md must start with '# Research Report'"))
     for heading in RESEARCH_HEADINGS:
         if not has_heading(text, heading):
@@ -89,7 +93,7 @@ def validate_proof(args: argparse.Namespace) -> list[str]:
     text = proof_doc.read_text(encoding="utf-8", errors="replace")
     if word_count(text) > MAX_PROOF_WORDS:
         failures.append(fail("proof_doc_too_long", f"proof.md exceeds {MAX_PROOF_WORDS} words"))
-    if not re.search(r"^#\s+Executable Proof\s*$", text, re.IGNORECASE | re.MULTILINE):
+    if not re.search(heading_pattern(1, "Executable Proof"), text, re.IGNORECASE | re.MULTILINE):
         failures.append(fail("missing_title", "proof.md must start with '# Executable Proof'"))
     for heading in PROOF_HEADINGS:
         if not has_heading(text, heading):

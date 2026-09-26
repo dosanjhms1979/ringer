@@ -7,9 +7,10 @@ import argparse
 import re
 import sys
 from pathlib import Path
+from urllib.parse import urlsplit, urlunsplit
 
 
-URL_RE = re.compile(r"https?://[^\s)\\]\"'<>]+", re.IGNORECASE)
+URL_RE = re.compile(r"https?://[^\s)\]\"'<>]+", re.IGNORECASE)
 
 
 def fail(message: str) -> None:
@@ -23,6 +24,34 @@ def split_paths(value: str) -> list[Path]:
 
 def extract_urls(text: str) -> set[str]:
     return {match.group(0).rstrip(".,;:!?)]}'\"") for match in URL_RE.finditer(text)}
+
+
+def normalise_url(url: str) -> str:
+    parts = urlsplit(url)
+    host = parts.netloc.lower()
+    if host.startswith("www."):
+        host = host[4:]
+    return urlunsplit(("https", host, parts.path.rstrip("/"), "", ""))
+
+
+def allowed_url(cited: str, allowed_set: set[str]) -> bool:
+    cited_parts = urlsplit(normalise_url(cited))
+    cited_path = cited_parts.path
+
+    for allowed in allowed_set:
+        allowed_parts = urlsplit(normalise_url(allowed))
+        if cited_parts.netloc != allowed_parts.netloc:
+            continue
+
+        allowed_path = allowed_parts.path
+        if cited_path == allowed_path:
+            return True
+
+        shorter, longer = sorted((cited_path, allowed_path), key=len)
+        if longer.startswith(shorter + "/"):
+            return True
+
+    return False
 
 
 def word_count(text: str) -> int:
@@ -77,7 +106,7 @@ def main() -> int:
 
     allowed_urls = set().union(*(extract_urls(text) for text in scout_texts))
     report_urls = extract_urls(report)
-    new_urls = sorted(url for url in report_urls if url not in allowed_urls)
+    new_urls = sorted(url for url in report_urls if not allowed_url(url, allowed_urls))
     if new_urls:
         failures.append(
             "synthesis cites URL(s) not present in scout reports: " + ", ".join(new_urls[:10])

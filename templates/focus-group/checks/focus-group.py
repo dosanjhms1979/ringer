@@ -43,8 +43,12 @@ def read_required(path: Path, label: str) -> tuple[str, list[str]]:
     return path.read_text(encoding="utf-8", errors="replace"), []
 
 
+def heading_pattern(level: int, text: str) -> str:
+    return rf"^{'#' * level}\s+(?:\d+[.):]\s+)?{re.escape(text)}:?\s*$"
+
+
 def has_heading(text: str, heading: str) -> bool:
-    return bool(re.search(rf"^##\s+{re.escape(heading)}\s*$", text, re.IGNORECASE | re.MULTILINE))
+    return bool(re.search(heading_pattern(2, heading), text, re.IGNORECASE | re.MULTILINE))
 
 
 def run_validator(command: str, session_dir: Path) -> list[str]:
@@ -96,13 +100,13 @@ def main() -> int:
     failures.extend(notes_failures)
 
     if reaction:
-        if not re.search(r"^#\s+Persona Reaction\s*$", reaction, re.IGNORECASE | re.MULTILINE):
+        if not re.search(heading_pattern(1, "Persona Reaction"), reaction, re.IGNORECASE | re.MULTILINE):
             failures.append(fail("reaction_missing_title", "reaction.md must start with '# Persona Reaction'"))
         for heading in REACTION_HEADINGS:
             if not has_heading(reaction, heading):
                 failures.append(fail("reaction_missing_section", f"reaction.md missing '## {heading}'"))
     if notes:
-        if not re.search(r"^#\s+Evaluator Notes\s*$", notes, re.IGNORECASE | re.MULTILINE):
+        if not re.search(heading_pattern(1, "Evaluator Notes"), notes, re.IGNORECASE | re.MULTILINE):
             failures.append(fail("notes_missing_title", "evaluator-notes.md must start with '# Evaluator Notes'"))
         for heading in NOTES_HEADINGS:
             if not has_heading(notes, heading):

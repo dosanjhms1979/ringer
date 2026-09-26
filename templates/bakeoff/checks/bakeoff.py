@@ -34,8 +34,12 @@ def output_tail(text: str, limit: int = 3000) -> str:
     return text[-limit:]
 
 
+def heading_pattern(level: int, text: str) -> str:
+    return rf"^{'#' * level}\s+(?:\d+[.):]\s+)?{re.escape(text)}:?\s*$"
+
+
 def has_heading(text: str, heading: str) -> bool:
-    return bool(re.search(rf"^##\s+{re.escape(heading)}\s*$", text, re.IGNORECASE | re.MULTILINE))
+    return bool(re.search(heading_pattern(2, heading), text, re.IGNORECASE | re.MULTILINE))
 
 
 def run_validator(command: str, session_dir: Path, expected_model: str) -> list[str]:
@@ -94,7 +98,7 @@ def main() -> int:
     if text:
         if word_count(text) > MAX_WORDS:
             failures.append(fail("too_long", f"evaluator notes exceed {MAX_WORDS} words"))
-        if not re.search(r"^#\s+Bakeoff Cell\s*$", text, re.IGNORECASE | re.MULTILINE):
+        if not re.search(heading_pattern(1, "Bakeoff Cell"), text, re.IGNORECASE | re.MULTILINE):
             failures.append(fail("missing_title", "evaluator-notes.md must start with '# Bakeoff Cell'"))
         if args.expected_model not in text:
             failures.append(fail("model_not_named", "evaluator-notes.md must name the expected model"))

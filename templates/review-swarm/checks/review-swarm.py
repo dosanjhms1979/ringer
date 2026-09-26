@@ -22,13 +22,17 @@ def word_count(text: str) -> int:
     return len(re.findall(r"\S+", text))
 
 
+def heading_pattern(level: int, text: str) -> str:
+    return rf"^{'#' * level}\s+(?:\d+[.):]\s+)?{re.escape(text)}:?\s*$"
+
+
 def has_heading(text: str, heading: str) -> bool:
-    return bool(re.search(rf"^##\s+{re.escape(heading)}\s*$", text, re.IGNORECASE | re.MULTILINE))
+    return bool(re.search(heading_pattern(2, heading), text, re.IGNORECASE | re.MULTILINE))
 
 
 def section(text: str, heading: str) -> str:
     pattern = re.compile(
-        rf"^##\s+{re.escape(heading)}\s*$([\s\S]*?)(?=^##\s+|\Z)",
+        rf"{heading_pattern(2, heading)}([\s\S]*?)(?=^##\s+|\Z)",
         re.IGNORECASE | re.MULTILINE,
     )
     match = pattern.search(text)
@@ -45,7 +49,7 @@ def validate_report(path: Path, surface: str) -> list[str]:
     text = path.read_text(encoding="utf-8", errors="replace")
     if word_count(text) > MAX_WORDS:
         failures.append(fail("too_long", f"report has more than {MAX_WORDS} words"))
-    if not re.search(r"^#\s+Review Report\s*$", text, re.IGNORECASE | re.MULTILINE):
+    if not re.search(heading_pattern(1, "Review Report"), text, re.IGNORECASE | re.MULTILINE):
         failures.append(fail("missing_title", "report must start with '# Review Report'"))
     for heading in REQUIRED_HEADINGS:
         if not has_heading(text, heading):

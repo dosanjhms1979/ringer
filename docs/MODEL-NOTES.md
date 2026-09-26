@@ -468,3 +468,18 @@ checks and raw logs support — no vibes, no worker self-reports.
   CLI, not the model. Pricing (OpenRouter, 2026-09-26): glm-5.3 $1.40/$4.40
   per M vs glm-5.2 $0.65/$2.04; glm-5.3-flash $0.04/$0.14 (price cut today,
   1.3M ctx) is the exploration candidate for low-stakes lanes — untested yet.
+
+## 2026-09-26 — check-lessons fix swarm (run ringer-check-lessons), 3 code-fix tasks
+
+- All three PASS first try, worktrees mode, patches applied clean and the full
+  286-test suite is green. Fixes: ANSI stripping + NO_COLOR env in
+  test-hardening and repo-feature checks; `--baseline-failures` gate in
+  check_repo_feature.py (fails only on NEW failure lines); numbered-heading
+  tolerance across bakeoff/focus-group/fix-swarm/research-with-proof/
+  review-swarm; URL prefix tolerance in competitive-teardown synthesis_check.
+- gpt-6-astra, code-fix: the biggest lane (2 checks + README + manifest +
+  a hermetic subprocess test), 38k tokens, 150s, first try. Clean patch.
+- gpt-5.6-sol, code-fix ×2: headings (5 files, one helper per file as asked,
+  23k tokens, 100s) and URLs (27k, 123s). Both first try; the URL patch also
+  fixed a latent char-class escaping bug in URL_RE that the spec did not ask
+  for — correct, and noted here so the change is not a surprise.

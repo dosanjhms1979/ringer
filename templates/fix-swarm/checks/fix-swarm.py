@@ -33,6 +33,14 @@ def output_tail(text: str, limit: int = 4000) -> str:
     return text[-limit:]
 
 
+def heading_pattern(level: int, text: str) -> str:
+    return rf"^{'#' * level}\s+(?:\d+[.):]\s+)?{re.escape(text)}:?\s*$"
+
+
+def has_heading(text: str, heading: str) -> bool:
+    return bool(re.search(heading_pattern(2, heading), text, re.IGNORECASE | re.MULTILINE))
+
+
 def run_shell(command: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         command,
@@ -85,10 +93,10 @@ def validate_summary(summary_path: Path, exported_summary: Path) -> list[str]:
     text = summary_path.read_text(encoding="utf-8", errors="replace")
     if word_count(text) > MAX_SUMMARY_WORDS:
         failures.append(fail("summary_too_long", f"summary has more than {MAX_SUMMARY_WORDS} words"))
-    if not re.search(r"^#\s+Fix Summary\s*$", text, re.IGNORECASE | re.MULTILINE):
+    if not re.search(heading_pattern(1, "Fix Summary"), text, re.IGNORECASE | re.MULTILINE):
         failures.append(fail("missing_title", "fix-summary.md must start with '# Fix Summary'"))
     for heading in SUMMARY_HEADINGS:
-        if not re.search(rf"^##\s+{re.escape(heading)}\s*$", text, re.IGNORECASE | re.MULTILINE):
+        if not has_heading(text, heading):
             failures.append(fail("missing_summary_section", f"fix-summary.md missing '## {heading}'"))
     if not has_placeholder(str(exported_summary)):
         exported_summary.parent.mkdir(parents=True, exist_ok=True)
