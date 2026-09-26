@@ -781,6 +781,10 @@ class EvalConfig:
     backend: str
     jsonl_path: Path
     postgres: PostgresEvalConfig | None = None
+    # Append-only attempt annotations (see `ringer.py annotate`). Defaults to
+    # <state_dir>/annotations.jsonl, beside runs.jsonl; resolved lazily by
+    # eval_annotations_path() so hand-built EvalConfig objects keep working.
+    annotations_path: Path | None = None
 
 
 @dataclass(frozen=True)
@@ -1551,6 +1555,7 @@ def load_eval_config(raw: Any, state_dir: Path) -> EvalConfig:
     if backend not in {"jsonl", "postgres"}:
         raise ValueError("eval.backend must be 'jsonl' or 'postgres'")
     jsonl_path = expand_path(raw.get("jsonl_path"), state_dir / "runs.jsonl")
+    annotations_path = expand_path(raw.get("annotations_path"), state_dir / "annotations.jsonl")
     postgres: PostgresEvalConfig | None = None
     postgres_raw = raw.get("postgres")
     if postgres_raw is not None:
@@ -1563,7 +1568,20 @@ def load_eval_config(raw: Any, state_dir: Path) -> EvalConfig:
         postgres = PostgresEvalConfig(env_file=env_file)
     if backend == "postgres" and postgres is None:
         raise ValueError("eval.backend='postgres' requires [eval.postgres].env_file")
-    return EvalConfig(backend=backend, jsonl_path=jsonl_path, postgres=postgres)
+    return EvalConfig(
+        backend=backend,
+        jsonl_path=jsonl_path,
+        postgres=postgres,
+        annotations_path=annotations_path,
+    )
+
+
+def eval_annotations_path(config: "AppConfig") -> Path:
+    """Where attempt annotations live: config override, else beside runs.jsonl."""
+    configured = config.eval.annotations_path
+    if configured is not None:
+        return configured.expanduser().resolve()
+    return (config.state_dir / "annotations.jsonl").expanduser().resolve()
 
 
 def load_hud_port(raw: Any) -> int:
@@ -5358,19 +5376,21 @@ def inject_models_tab_into_ringside_html(html: str) -> str:
             `<td class="numeric">${numberOrZeroLocal(row.tasks).toLocaleString()}</td>`,
             `<td class="numeric">${html(percent(row.first_try_pass_rate))}</td>`,
             `<td class="numeric">${html(percent(row.pass_rate))}</td>`,
+            `<td class="numeric">${numberOrZeroLocal(row.voided_attempts) ? numberOrZeroLocal(row.voided_attempts).toLocaleString() : ""}</td>`,
             `<td class="numeric">${row.median_tokens === null || row.median_tokens === undefined ? "" : numberOrZeroLocal(row.median_tokens).toLocaleString()}</td>`,
             `<td>${html(modelDuration(row.median_duration_ms))}</td>`,
             `<td>${html(modelDate(row.last_seen))}</td>`,
             `<td class="model-notes" title="${html(notes)}">${html(row.latest_note || "")}</td>`,
             '</tr>',
           );
-          if (expanded) body.push(`<tr class="model-breakdown"><td colspan="12">${breakdown(bucketId)}</td></tr>`);
+          if (expanded) body.push(`<tr class="model-breakdown"><td colspan="13">${breakdown(bucketId)}</td></tr>`);
         });
         wrap.innerHTML = [
           '<table class="models-table">',
           '<thead><tr>',
           '<th>Model</th><th>Lab</th><th>Harness</th><th>API/Plan</th><th>Tier</th>',
           '<th class="numeric">Tasks</th><th class="numeric">First try</th><th class="numeric">Pass</th>',
+          '<th class="numeric" title="attempts voided by ringer.py annotate (orchestrator/harness fault), excluded from tiers">Voided</th>',
           '<th class="numeric">Tokens (median)</th><th>Speed (median)</th><th>Last used</th><th>Notes</th>',
           '</tr></thead>',
           `<tbody>${body.join("")}</tbody>`,
@@ -5655,6 +5675,7 @@ class PersistentHudServer:
                             default_log_path=server_ref.default_model_log_path,
                             db_path=server_ref.model_db_path,
                             notes_path=server_ref.model_notes_path,
+                            annotations_path=state_dir / "annotations.jsonl",
                         )
                     except Exception as exc:
                         payload = {
@@ -6082,6 +6103,330 @@ def group_model_log_tasks(rows: list[dict[str, Any]]) -> list[list[dict[str, Any
     return grouped
 
 
+# --- Attempt annotations -----------------------------------------------------
+#
+# An annotation voids an attempt whose FAIL was caused by the orchestrator or
+# the harness, never by the model: a check that cannot match honest output, a
+# word cap the spec never stated, an HTTP 429 quota wall. runs.jsonl is never
+# edited; annotations.jsonl is append-only and a "retract" row cancels earlier
+# annotations for the same target. Aggregators drop voided attempts before
+# grouping so the earliest surviving attempt becomes the first try.
+
+ANNOTATION_KINDS = ("check_defect", "quota", "harness")
+ANNOTATION_RETRACT_KIND = "retract"
+ANNOTATION_MIN_REASON_CHARS = 20
+
+
+def annotation_text(value: Any) -> str:
+    return model_log_text(value)
+
+
+def annotation_attempt(value: Any) -> int | None:
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        return None
+    return number if number >= 1 else None
+
+
+def read_annotation_rows(path: Path) -> list[dict[str, Any]]:
+    """Every well-formed line of annotations.jsonl, in file order, retracts included."""
+    rows: list[dict[str, Any]] = []
+    try:
+        fh = path.expanduser().open("r", encoding="utf-8")
+    except FileNotFoundError:
+        return rows
+    with fh:
+        for line in fh:
+            if not line.strip():
+                continue
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(row, dict):
+                continue
+            if not annotation_text(row.get("run_id")) or not annotation_text(row.get("task_key")):
+                continue
+            rows.append(row)
+    return rows
+
+
+def load_annotations(path: Path) -> list[dict[str, Any]]:
+    """Active (non-retracted) annotations from an append-only JSONL file.
+
+    A row with kind "retract" cancels every earlier annotation whose
+    (run_id, task_key, attempt) matches exactly; a retract with attempt null
+    cancels every earlier annotation for that task, whatever its attempt.
+    Later annotations after a retract stand on their own.
+    """
+    active: list[dict[str, Any]] = []
+    for row in read_annotation_rows(path):
+        run_id = annotation_text(row.get("run_id"))
+        task_key = annotation_text(row.get("task_key"))
+        attempt = annotation_attempt(row.get("attempt"))
+        kind = annotation_text(row.get("kind"))
+        if kind == ANNOTATION_RETRACT_KIND:
+            active = [
+                item
+                for item in active
+                if not (
+                    annotation_text(item.get("run_id")) == run_id
+                    and annotation_text(item.get("task_key")) == task_key
+                    and (attempt is None or annotation_attempt(item.get("attempt")) == attempt)
+                )
+            ]
+            continue
+        if kind not in ANNOTATION_KINDS:
+            continue
+        active.append(row)
+    return active
+
+
+def order_task_attempt_rows(task_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return sorted(
+        task_rows,
+        key=lambda row: (
+            model_log_text(row.get("logged_at")),
+            1 if model_log_row_is_retry(row) else 0,
+        ),
+    )
+
+
+def log_task_attempts(rows: list[dict[str, Any]]) -> dict[tuple[str, str], list[dict[str, Any]]]:
+    """Rows per (run_id, task_key), each list in attempt order (1-based index + 1)."""
+    by_task: dict[tuple[str, str], list[dict[str, Any]]] = {}
+    for row in rows:
+        run_id = model_log_text(row.get("run_id"))
+        task_key = model_log_text(row.get("task_key"))
+        if not run_id or not task_key:
+            continue
+        by_task.setdefault((run_id, task_key), []).append(row)
+    return {key: order_task_attempt_rows(task_rows) for key, task_rows in by_task.items()}
+
+
+def apply_annotations(
+    rows: list[dict[str, Any]],
+    annotations: list[dict[str, Any]] | None,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Drop voided attempts and promote the earliest survivor to first try.
+
+    Returns (surviving_rows, voided_rows). Surviving rows keep file order so
+    group_model_log_tasks() behaves as before; a survivor that becomes its
+    task's earliest attempt gets retry=False (a shallow copy — the input rows
+    and runs.jsonl are never mutated), later survivors get retry=True.
+    """
+    if not annotations:
+        return list(rows), []
+    voided_targets: dict[tuple[str, str], set[int] | None] = {}
+    for item in annotations:
+        key = (annotation_text(item.get("run_id")), annotation_text(item.get("task_key")))
+        attempt = annotation_attempt(item.get("attempt"))
+        if attempt is None:
+            voided_targets[key] = None  # every attempt of the task
+            continue
+        current = voided_targets.get(key, set())
+        if current is None:
+            continue
+        current.add(attempt)
+        voided_targets[key] = current
+    if not voided_targets:
+        return list(rows), []
+    replacements: dict[int, dict[str, Any] | None] = {}
+    voided: list[dict[str, Any]] = []
+    for key, ordered in log_task_attempts(rows).items():
+        if key not in voided_targets:
+            continue
+        targets = voided_targets[key]
+        survivors: list[dict[str, Any]] = []
+        for index, row in enumerate(ordered, start=1):
+            if targets is None or index in targets:
+                replacements[id(row)] = None
+                voided.append(row)
+            else:
+                survivors.append(row)
+        for position, row in enumerate(survivors):
+            wanted_retry = position > 0
+            if model_log_row_is_retry(row) != wanted_retry:
+                patched = dict(row)
+                patched["retry"] = wanted_retry
+                replacements[id(row)] = patched
+    surviving: list[dict[str, Any]] = []
+    for row in rows:
+        marker = id(row)
+        if marker in replacements:
+            replacement = replacements[marker]
+            if replacement is None:
+                continue
+            surviving.append(replacement)
+        else:
+            surviving.append(row)
+    return surviving, voided
+
+
+def append_annotation_row(path: Path, row: dict[str, Any]) -> None:
+    path = path.expanduser()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps(row, sort_keys=True) + "\n")
+
+
+def validate_annotation_target(
+    log_path: Path,
+    *,
+    run_id: str,
+    task_key: str,
+    attempt: int | None,
+) -> str | None:
+    """Return a refusal message when (run_id, task_key[, attempt]) is not in the log."""
+    rows, _skipped = read_model_log_rows(log_path)
+    attempts = log_task_attempts(rows)
+    task_rows = attempts.get((run_id, task_key))
+    if not task_rows:
+        matching_run = any(model_log_text(row.get("run_id")) == run_id for row in rows)
+        if not matching_run:
+            return f"annotate: run_id {run_id!r} is not in {log_path}"
+        return f"annotate: task {task_key!r} is not in run {run_id!r} ({log_path})"
+    if attempt is not None and attempt > len(task_rows):
+        return (
+            f"annotate: run {run_id!r} task {task_key!r} has {len(task_rows)} attempt(s); "
+            f"attempt {attempt} does not exist"
+        )
+    return None
+
+
+def build_annotation_row(
+    *,
+    run_id: str,
+    task_key: str,
+    attempt: int | None,
+    kind: str,
+    reason: str,
+    annotated_by: str,
+    annotated_at: str | None = None,
+) -> dict[str, Any]:
+    return {
+        "run_id": run_id,
+        "task_key": task_key,
+        "attempt": attempt,
+        "kind": kind,
+        "reason": reason,
+        "annotated_by": annotated_by,
+        "annotated_at": annotated_at or utc_now_iso(),
+    }
+
+
+def format_annotation_line(row: dict[str, Any]) -> str:
+    attempt = annotation_attempt(row.get("attempt"))
+    target = f"{annotation_text(row.get('run_id'))}/{annotation_text(row.get('task_key'))}"
+    target += f"#{attempt}" if attempt is not None else " (all attempts)"
+    return (
+        f"{annotation_text(row.get('annotated_at')):<25} {annotation_text(row.get('kind')):<13} "
+        f"{target}  by {annotation_text(row.get('annotated_by')) or '?'}: "
+        f"{annotation_text(row.get('reason'))}"
+    )
+
+
+def run_annotate_command(config: AppConfig, args: argparse.Namespace) -> int:
+    log_path = (getattr(args, "log", None) or config.eval.jsonl_path).expanduser().resolve()
+    annotations_path = (
+        getattr(args, "annotations_file", None) or eval_annotations_path(config)
+    ).expanduser().resolve()
+
+    if getattr(args, "list", False):
+        wanted_run = getattr(args, "run_id", None)
+        active = [
+            row
+            for row in load_annotations(annotations_path)
+            if wanted_run is None or annotation_text(row.get("run_id")) == wanted_run
+        ]
+        if args.json:
+            print(json.dumps(active))
+            return 0
+        print(f"Annotations: {annotations_path} ({len(active)} active)")
+        for row in active:
+            print(format_annotation_line(row))
+        return 0
+
+    remove = getattr(args, "remove", None)
+    if remove:
+        run_id, task_key = remove
+        attempt = getattr(args, "attempt", None)
+        active = [
+            row
+            for row in load_annotations(annotations_path)
+            if annotation_text(row.get("run_id")) == run_id
+            and annotation_text(row.get("task_key")) == task_key
+            and (attempt is None or annotation_attempt(row.get("attempt")) == attempt)
+        ]
+        if not active:
+            print(
+                f"annotate: nothing to retract for run {run_id!r} task {task_key!r}"
+                + (f" attempt {attempt}" if attempt is not None else ""),
+                file=sys.stderr,
+            )
+            return 1
+        identity = resolve_identity(getattr(args, "identity", None), config)
+        row = build_annotation_row(
+            run_id=run_id,
+            task_key=task_key,
+            attempt=attempt,
+            kind=ANNOTATION_RETRACT_KIND,
+            reason=getattr(args, "reason", None) or f"retracted {len(active)} annotation(s)",
+            annotated_by=identity,
+        )
+        append_annotation_row(annotations_path, row)
+        print(f"annotate: retracted {len(active)} annotation(s) for {run_id}/{task_key} -> {annotations_path}")
+        return 0
+
+    missing = [
+        flag
+        for flag, value in (
+            ("--run-id", getattr(args, "run_id", None)),
+            ("--task", getattr(args, "task", None)),
+            ("--kind", getattr(args, "kind", None)),
+            ("--reason", getattr(args, "reason", None)),
+        )
+        if not value
+    ]
+    if missing:
+        print(f"annotate: {', '.join(missing)} required (or use --list / --remove)", file=sys.stderr)
+        return 2
+    reason = str(args.reason).strip()
+    if len(reason) < ANNOTATION_MIN_REASON_CHARS:
+        print(
+            f"annotate: --reason must be at least {ANNOTATION_MIN_REASON_CHARS} characters "
+            f"(got {len(reason)}); say what the orchestrator or harness got wrong",
+            file=sys.stderr,
+        )
+        return 2
+    attempt = getattr(args, "attempt", None)
+    if attempt is not None and attempt < 1:
+        print("annotate: --attempt is 1-based and must be >= 1", file=sys.stderr)
+        return 2
+    refusal = validate_annotation_target(
+        log_path, run_id=args.run_id, task_key=args.task, attempt=attempt
+    )
+    if refusal:
+        print(refusal, file=sys.stderr)
+        return 1
+    identity = resolve_identity(getattr(args, "identity", None), config)
+    row = build_annotation_row(
+        run_id=args.run_id,
+        task_key=args.task,
+        attempt=attempt,
+        kind=args.kind,
+        reason=reason,
+        annotated_by=identity,
+    )
+    append_annotation_row(annotations_path, row)
+    target = f"{args.run_id}/{args.task}" + (f"#{attempt}" if attempt is not None else " (all attempts)")
+    print(f"annotate: voided {target} as {args.kind} -> {annotations_path}")
+    return 0
+
+
 def read_model_log_rows(
     path: Path,
     *,
@@ -6129,8 +6474,10 @@ def aggregate_model_log_rows(
     *,
     task_type: str | None = None,
     model: str | None = None,
+    annotations: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
     groups: dict[tuple[str, str, str, str, bool], dict[str, Any]] = {}
+    rows, voided_rows = apply_annotations(rows, annotations)
     effort_keys = model_reasoning_effort_keys(rows)
     for task_rows in group_model_log_tasks(rows):
         ordered = sorted(
@@ -6177,6 +6524,7 @@ def aggregate_model_log_rows(
                 "failed": 0,
                 "pass_rate": 0.0,
                 "first_try_pass_rate": 0.0,
+                "voided_attempts": 0,
                 "median_duration_ms": None,
                 "median_tokens": None,
                 "last_seen": "",
@@ -6204,6 +6552,23 @@ def aggregate_model_log_rows(
         if logged_at > group["last_seen"]:
             group["last_seen"] = logged_at
 
+    # Voided attempts are counted against the (engine, model, task_type)
+    # bucket they would have landed in, but only where that bucket still has
+    # surviving evidence — a fully voided model has no row to hang them on.
+    for row in voided_rows:
+        if model_log_row_is_reserved_fixture(row):
+            continue
+        unattributed = model_log_row_is_unattributed(row)
+        key = (
+            model_log_row_engine(row),
+            model_log_row_model(row),
+            model_log_row_task_type(row),
+            ("" if unattributed else model_log_row_reasoning_effort(row)) or "",
+            unattributed,
+        )
+        if key in groups:
+            groups[key]["voided_attempts"] += 1
+
     finalized: list[dict[str, Any]] = []
     for group in groups.values():
         tasks_count = group["tasks"]
@@ -6227,6 +6592,7 @@ def aggregate_model_log_rows(
                 "failed": group["failed"],
                 "pass_rate": group["pass_rate"],
                 "first_try_pass_rate": group["first_try_pass_rate"],
+                "voided_attempts": group["voided_attempts"],
                 "median_duration_ms": group["median_duration_ms"],
                 "median_tokens": group["median_tokens"],
                 "last_seen": group["last_seen"],
@@ -6257,6 +6623,7 @@ MODEL_SCOREBOARD_COLUMNS = (
     "Tasks",
     "First try",
     "Pass",
+    "Voided",
     "Tokens (median)",
     "Speed (median)",
     "Last used",
@@ -6858,6 +7225,10 @@ def read_catalog_events_from_offset(path: Path, offset: int) -> tuple[list[dict[
 
 
 def insert_attempt_rows(conn: Any, rows: list[dict[str, Any]]) -> int:
+    # The read model mirrors runs.jsonl verbatim. Attempt annotations
+    # (annotations.jsonl) are deliberately NOT synced here: `models` applies
+    # them on top of the attempt rows at aggregation time, so the SQLite copy
+    # stays a faithful, unedited mirror of the log.
     payloads: list[tuple[Any, ...]] = []
     for row in rows:
         payloads.append(
@@ -7558,8 +7929,10 @@ def aggregate_model_scoreboard_rows(
     *,
     task_type: str | None = None,
     model: str | None = None,
+    annotations: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
     models: dict[tuple[str, str, str, bool], dict[str, Any]] = {}
+    rows, voided_rows = apply_annotations(rows, annotations)
     effort_keys = model_reasoning_effort_keys(rows)
     for task_rows in group_model_log_tasks(rows):
         ordered = sorted(
@@ -7599,6 +7972,7 @@ def aggregate_model_scoreboard_rows(
                 "failed": 0,
                 "retries": 0,
                 "first_try_passed": 0,
+                "voided_attempts": 0,
                 "last_seen": "",
                 "_duration_ms": [],
                 "_tokens": [],
@@ -7614,6 +7988,7 @@ def aggregate_model_scoreboard_rows(
                 "passed": 0,
                 "failed": 0,
                 "first_try_passed": 0,
+                "voided_attempts": 0,
                 "last_seen": "",
             },
         )
@@ -7637,6 +8012,30 @@ def aggregate_model_scoreboard_rows(
             if tokens is not None:
                 model_entry["_tokens"].append(tokens)
 
+    for row in voided_rows:
+        if model_log_row_is_reserved_fixture(row):
+            continue
+        unattributed = model_log_row_is_unattributed(row)
+        row_model = model_log_row_model(row)
+        row_task_type = model_log_row_task_type(row)
+        if model is not None and row_model != model:
+            continue
+        if task_type is not None and row_task_type != task_type:
+            continue
+        model_key = (
+            model_log_row_engine(row),
+            row_model,
+            ("" if unattributed else model_log_row_reasoning_effort(row)) or "",
+            unattributed,
+        )
+        entry = models.get(model_key)
+        if entry is None:
+            continue
+        entry["voided_attempts"] += 1
+        breakdown = entry["_task_types"].get(row_task_type)
+        if breakdown is not None:
+            breakdown["voided_attempts"] += 1
+
     finalized: list[dict[str, Any]] = []
     for entry in models.values():
         tasks_count = int(entry["tasks"])
@@ -7652,6 +8051,7 @@ def aggregate_model_scoreboard_rows(
                     "failed": breakdown["failed"],
                     "first_try_pass_rate": breakdown["first_try_passed"] / b_tasks if b_tasks else 0.0,
                     "pass_rate": breakdown["passed"] / b_tasks if b_tasks else 0.0,
+                    "voided_attempts": breakdown["voided_attempts"],
                     "last_seen": breakdown["last_seen"],
                 }
             )
@@ -7675,6 +8075,7 @@ def aggregate_model_scoreboard_rows(
                 "retries": entry["retries"],
                 "passed": entry["passed"],
                 "failed": entry["failed"],
+                "voided_attempts": entry["voided_attempts"],
                 "first_try_pass_rate": entry["first_try_passed"] / tasks_count if tasks_count else 0.0,
                 "pass_rate": entry["passed"] / tasks_count if tasks_count else 0.0,
                 "median_duration_ms": median_int(entry["_duration_ms"]),
@@ -8306,13 +8707,14 @@ def render_model_table_pair(
       <td class="num">{fmt_int(row.get("tasks"))}</td>
       <td class="num rate-cell">{rate_cell_html(row.get("first_try_pass_rate"))}</td>
       <td class="num rate-cell">{rate_cell_html(row.get("pass_rate"))}</td>
+      <td class="num voided-cell">{fmt_int(row.get("voided_attempts")) if row.get("voided_attempts") else ""}</td>
       <td class="num">{html_escape(fmt_int(row.get("median_tokens"))) if row.get("median_tokens") is not None else ""}</td>
       <td>{html_escape(fmt_scoreboard_duration(row.get("median_duration_ms")))}</td>
       <td>{html_escape(humanized_log_date(row.get("last_seen")))}</td>
       <td class="notes-cell" title="{html_escape(notes_title)}">{html_escape(latest_note)}</td>
     </tr>
     <tr class="detail-row">
-      <td colspan="12">
+      <td colspan="13">
         <details class="model-detail">
           <summary>details for {html_escape(model_display)}</summary>
           <div class="detail-content">
@@ -8361,7 +8763,15 @@ def render_model_scoreboard_html(
         )
     table_rows = "".join(rendered_rows)
     if not table_rows:
-        table_rows = '<tr><td colspan="12" class="muted">No local model evidence matched these filters.</td></tr>'
+        table_rows = '<tr><td colspan="13" class="muted">No local model evidence matched these filters.</td></tr>'
+    voided_total = sum(int(row.get("voided_attempts") or 0) for row in ordered)
+    voided_pointer = (
+        f'<div class="identity-pointer">Voided: {fmt_int(voided_total)} attempt(s) excluded from tiers by '
+        "<code>ringer.py annotate</code> (orchestrator check or harness failure, never the model's work); "
+        "<code>ringer.py annotate --list</code> shows each one.</div>"
+        if voided_total
+        else ""
+    )
     unregistered_slugs = sorted(
         {str(row.get("model") or "") for row in ordered if row.get("unregistered") and row.get("model")}
     )
@@ -8421,6 +8831,7 @@ def render_model_scoreboard_html(
             <th class="num">Tasks</th>
             <th class="num">First try</th>
             <th class="num">Pass</th>
+            <th class="num" title="attempts voided by ringer.py annotate: orchestrator check or harness failure, excluded from tiers">Voided</th>
             <th class="num">Tokens (median)</th>
             <th>Speed (median)</th>
             <th>Last used</th>
@@ -8435,6 +8846,7 @@ def render_model_scoreboard_html(
     <span>{fmt_int(rows_read)} rows read, {fmt_int(skipped)} skipped lines. Ordering sorts by evidence tier first: proven n&gt;=3, then probation; ties use first-try pass rate and pass rate. Misrouted and unattributed legacy rows are not ranked or tiered.</span>
     {unregistered_pointer}
     {misrouted_pointer}
+    {voided_pointer}
   </footer>
 </div>
 </body>
@@ -8485,7 +8897,7 @@ def write_model_scoreboard_html(
 
 def print_model_log_table(path: Path, rows_read: int, skipped: int, groups: list[dict[str, Any]]) -> None:
     print(f"Model log: {path} ({rows_read} rows, {skipped} skipped lines)")
-    widths = (32, 20, 18, 18, 10, 7, 10, 7, 15, 14, 14, 60)
+    widths = (32, 20, 18, 18, 10, 7, 10, 7, 6, 15, 14, 14, 60)
     header = " | ".join(
         f"{name:<{width}}" for name, width in zip(MODEL_SCOREBOARD_COLUMNS, widths)
     )
@@ -8518,6 +8930,7 @@ def print_model_log_table(path: Path, rows_read: int, skipped: int, groups: list
             fmt_int(group.get("tasks")),
             fmt_percent(group.get("first_try_pass_rate")),
             fmt_percent(group.get("pass_rate")),
+            fmt_int(group.get("voided_attempts")),
             "" if group.get("median_tokens") is None else fmt_int(group.get("median_tokens")),
             fmt_scoreboard_duration(group.get("median_duration_ms")),
             humanized_log_date(group.get("last_seen")),
@@ -8525,6 +8938,13 @@ def print_model_log_table(path: Path, rows_read: int, skipped: int, groups: list
         )
         print(" | ".join(f"{shorten(value, width):<{width}}" for value, width in zip(values, widths)))
     print("Judgment layer: docs/MODEL-NOTES.md")
+    voided_total = sum(int(group.get("voided_attempts") or 0) for group in groups)
+    if voided_total:
+        print(
+            f"Voided: {voided_total} attempt(s) excluded from tiers by `ringer.py annotate` "
+            "(orchestrator check or harness failure, not the model's work); "
+            "`ringer.py annotate --list` shows each one."
+        )
     unregistered_slugs = sorted(
         {str(group.get("model") or "") for group in groups if group.get("unregistered") and group.get("model")}
     )
@@ -8541,8 +8961,13 @@ def build_models_api_payload(
     catalog_path: Path | None = None,
     registry_path: Path | None = None,
     notes_path: Path | None = None,
+    annotations_path: Path | None = None,
 ) -> dict[str, Any]:
     log_path = log_path.expanduser().resolve()
+    # Default beside the log, matching eval_annotations_path() for the default state_dir.
+    annotations = load_annotations(
+        (annotations_path or log_path.parent / "annotations.jsonl").expanduser().resolve()
+    )
     default_log_path = (default_log_path or log_path).expanduser().resolve()
     explicit_db = db_path is not None
     resolved_db_path = (db_path or default_read_model_db_path()).expanduser().resolve()
@@ -8583,7 +9008,7 @@ def build_models_api_payload(
     notes_sections = parse_model_notes_sections(notes_path)
     groups = enrich_model_groups_with_notes(
         enrich_model_groups_with_identity(
-            aggregate_model_log_rows(rows),
+            aggregate_model_log_rows(rows, annotations=annotations),
             rows,
             identity_registry,
             include_task_type=True,
@@ -8593,7 +9018,7 @@ def build_models_api_payload(
     )
     rollup = enrich_model_groups_with_notes(
         enrich_model_groups_with_identity(
-            aggregate_model_scoreboard_rows(rows),
+            aggregate_model_scoreboard_rows(rows, annotations=annotations),
             rows,
             identity_registry,
             include_task_type=False,
@@ -8659,9 +9084,12 @@ def run_models_command(config: AppConfig, args: argparse.Namespace) -> int:
         catalog_models_from_db = []
     catalog_models = catalog_models_from_db if using_db else load_catalog_snapshot(catalog_path)
     notes_sections = parse_model_notes_sections(notes_path)
+    annotations = load_annotations(eval_annotations_path(config))
     groups = enrich_model_groups_with_notes(
         enrich_model_groups_with_identity(
-            aggregate_model_log_rows(rows, task_type=args.task_type, model=args.model),
+            aggregate_model_log_rows(
+                rows, task_type=args.task_type, model=args.model, annotations=annotations
+            ),
             rows,
             identity_registry,
             include_task_type=True,
@@ -8684,7 +9112,9 @@ def run_models_command(config: AppConfig, args: argparse.Namespace) -> int:
     if html_arg is not None or open_requested:
         scoreboard_rows = enrich_model_groups_with_notes(
             enrich_model_groups_with_identity(
-                aggregate_model_scoreboard_rows(rows, task_type=args.task_type, model=args.model),
+                aggregate_model_scoreboard_rows(
+                    rows, task_type=args.task_type, model=args.model, annotations=annotations
+                ),
                 rows,
                 identity_registry,
                 include_task_type=False,
@@ -11173,7 +11603,38 @@ def build_parser() -> argparse.ArgumentParser:
     models_parser.add_argument("--open", action="store_true", help="render the HTML scoreboard to the artifact library and open it")
     models_parser.add_argument("--json", action="store_true", help="print the scoreboard as JSON")
 
-    catalog_parser = subparsers.add_parser("catalog", help="show or refresh the local OpenRouter model catalog")
+    annotate_parser = subparsers.add_parser(
+        "annotate",
+        help="void an attempt whose FAIL was the orchestrator's or harness's fault, not the model's",
+        description=(
+            "Append an annotation that voids an eval-log attempt on the model scoreboard. "
+            "Legitimate only when the check or the harness failed (a regex that cannot match honest "
+            "output, an unstated word cap, an HTTP 429 quota wall) — never to excuse the model's work. "
+            "runs.jsonl is never edited; annotations.jsonl is append-only and --remove appends a retract."
+        ),
+    )
+    annotate_parser.add_argument("--config", type=Path, default=argparse.SUPPRESS, help=argparse.SUPPRESS)
+    annotate_parser.add_argument("--run-id", dest="run_id", help="run_id of the attempt to void (as logged in runs.jsonl)")
+    annotate_parser.add_argument("--task", help="task_key of the attempt to void")
+    annotate_parser.add_argument("--attempt", type=int, help="1-based attempt within the task (default: every attempt)")
+    annotate_parser.add_argument("--kind", choices=ANNOTATION_KINDS, help="why the attempt does not count against the model")
+    annotate_parser.add_argument(
+        "--reason",
+        help=f"free-text justification, at least {ANNOTATION_MIN_REASON_CHARS} characters (required when annotating)",
+    )
+    annotate_parser.add_argument("--identity", help="who is annotating (resolved like `run --identity`)")
+    annotate_parser.add_argument("--list", action="store_true", help="print active annotations (optionally filtered by --run-id)")
+    annotate_parser.add_argument("--json", action="store_true", help="with --list, print annotations as JSON")
+    annotate_parser.add_argument(
+        "--remove",
+        nargs=2,
+        metavar=("RUN_ID", "TASK_KEY"),
+        help="append a retract row cancelling earlier annotations for this target (narrow with --attempt)",
+    )
+    annotate_parser.add_argument("--log", type=Path, help="path to local eval JSONL log")
+    annotate_parser.add_argument("--annotations-file", type=Path, help="path to annotations JSONL (default: <state_dir>/annotations.jsonl)")
+
+    catalog_parser =subparsers.add_parser("catalog", help="show or refresh the local OpenRouter model catalog")
     catalog_parser.add_argument("--refresh", action="store_true", help="fetch source and rewrite the local snapshot")
     catalog_parser.add_argument("--source", help=f"OpenRouter models URL or fixture file (default: {DEFAULT_CATALOG_SOURCE})")
     catalog_parser.add_argument("--file", type=Path, help="catalog snapshot path (default: ~/.ringer/openrouter-catalog.json)")
@@ -11270,6 +11731,8 @@ def main(argv: list[str] | None = None) -> int:
             return run_db_command(config, args)
         if args.command == "models":
             return run_models_command(config, args)
+        if args.command == "annotate":
+            return run_annotate_command(config, args)
         if args.command == "hud":
             return run_persistent_hud(
                 config,

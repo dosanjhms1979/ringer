@@ -701,3 +701,24 @@ checks and raw logs support — no vibes, no worker self-reports.
   slug. At $0.04/$0.14 per M with 1.3M context it is the exploration lane
   for low-stakes docs/mechanical work — untested on real tasks; small models
   choke first on long harness tasks, so audition it on ONE task per batch.
+
+## 2026-09-27 — attempt annotations shipped (`ringer.py annotate`), built by Claude Fable 5.1
+
+- Run ringer-attempt-annotations, one code-feature task on the `claude`
+  engine: implementation PASSED its verify command on attempt 1 (new tests,
+  full suite, cold-shell help, docs) but the fix-swarm template's 700-word
+  SUMMARY cap — never stated in the spec — failed the attempt; cap raised to
+  1500 (format rule), attempt 2 PASS. Annotated with the feature itself.
+- Feature: append-only <state_dir>/annotations.jsonl; kinds check_defect /
+  quota / harness; retracts are rows; both aggregators drop voided attempts
+  and promote the earliest survivor to first try; "Voided" column on CLI,
+  JSON, HTML and Ringside; SQLite read model untouched (annotations applied
+  at aggregation time). README "Annotating attempts", TAXONOMY paragraph.
+- Applied 2026-09-27: 23 annotations covering the 2026-09-26 check defects
+  (word caps, citation resolver, .ts extensions, AE-53 gate order and shared
+  tree), the claude.ai 429 wall, the Grok Build free-tier wall, the stale
+  worktree setup errors, and the gpt-6-sol unavailable slug. Every row names
+  its reason and points here. Tiers after: Fable 5.1 / Opus 5.5 / Sonnet 5 /
+  Haiku 4.5 / Grok 4.7 (Cursor) PROVEN on code-review; Astra, 5.6 Sol, Grok
+  4.7, Sonnet PROVEN on code-fix; Fable and Opus need one more real code-fix.
+  Haiku's genuine engine-wrappers failure was left standing.

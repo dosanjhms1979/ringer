@@ -64,6 +64,10 @@ Keep the prohibitions short: do not use a harness, CLI, provider, plan, or fixtu
 
 The names `proven-model`, `probation-model`, `mock-model`, and `test-model` are reserved for tests. Raw log rows may retain them, but they are excluded from every scoreboard aggregation, ranking, tier, JSON payload, and HTML surface and will never display.
 
+## Voided attempts
+
+A voided attempt is a log row that `ringer.py annotate` has marked as an orchestrator or harness failure (`check_defect`, `quota`, or `harness`) rather than a model failure. The row stays in `runs.jsonl` untouched and the annotation lives in the append-only `annotations.jsonl`, but every scoreboard aggregation excludes the voided attempt before computing tasks, attempts, `first_try_pass_rate`, and tiers; the earliest surviving attempt of the task counts as the first try, and a task whose every attempt is voided contributes no evidence at all. Voided attempts are never hidden: each surface shows the per-model count in a `Voided` column (`voided_attempts` in JSON), and `annotate --list` shows who voided what and why.
+
 ## Unattributed rows
 
 An unattributed row is a historical log row whose `model` field is empty or blank. It is not a run where the manifest omitted a model and Ringer resolved and stamped the engine default at write time.

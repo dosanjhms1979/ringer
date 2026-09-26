@@ -337,6 +337,25 @@ Rows that match nothing keep their old `task_type` (empty); rows whose run-state
 
 `docs/MODEL-NOTES.md` is where the human-readable judgment lives on top of these numbers — the scoreboard tells you the pass rates; the notes tell you why a model shines or chokes on a given task shape.
 
+### Annotating attempts
+
+Sometimes an attempt FAILs and the model did nothing wrong: the orchestrator's check had a regex that could not match honest output, the spec never stated the word cap the check enforced, or the harness hit an HTTP 429 quota wall before the worker ran. Left alone, that FAIL is recorded against the model and drags its `first_try_pass_rate` (and so its tier) down forever. `annotate` is the first-class remedy:
+
+```bash
+./ringer.py annotate --run-id <run_id> --task <task_key> --attempt 1 \
+    --kind check_defect --reason "check grep required 'Done.' but the spec asked for 'done'"
+./ringer.py annotate --run-id <run_id> --task <task_key> --kind quota \
+    --reason "HTTP 429 on both attempts; the worker never ran"        # no --attempt = every attempt
+./ringer.py annotate --list [--run-id <run_id>] [--json]                # what is currently voided
+./ringer.py annotate --remove <run_id> <task_key> [--attempt N]         # retract, append-only
+```
+
+**When it is legitimate:** only when the orchestrator's check or the harness failed. `--kind` must be one of `check_defect` (the check could not pass on honest output), `quota` (rate limit / plan exhaustion), or `harness` (the CLI crashed, sandbox refused, etc.). It is never for "the model was close" or "it passed on retry" — the retry lane already measures that. `--reason` is required and must be at least 20 characters, because the reason is the audit trail.
+
+**Audit trail:** `runs.jsonl` is never edited. Annotations are appended to `<state_dir>/annotations.jsonl` (beside `runs.jsonl`; override with `[eval].annotations_path`) as one JSON object per line with `run_id`, `task_key`, `attempt` (1-based, or `null` for every attempt), `kind`, `reason`, `annotated_by` (resolved like `run --identity`), and `annotated_at`. `--remove` never rewrites the file either — it appends a `retract` row that cancels earlier annotations for that target. `annotate` refuses a target that is not in the log, an attempt number the task never reached, and a reason under 20 characters.
+
+**Effect on the scoreboard:** voided attempts are dropped before grouping, so if attempt 1 is voided the surviving attempt 2 becomes the first try. A task whose every attempt is voided contributes nothing. Every surface (`models`, `--json` as `voided_attempts`, `--html`, Ringside) shows the count in a `Voided` column so the exclusion is visible, not silent. The SQLite read model stays a faithful mirror of `runs.jsonl`; annotations are applied on top at query time.
+
 ### Evidence-based routing
 
 The scoreboard only knows models you've already run. To reason about models you *haven't* tried yet, Ringer keeps a local snapshot of the OpenRouter catalog and a change log alongside the runs log:

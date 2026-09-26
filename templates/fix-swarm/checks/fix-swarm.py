@@ -8,7 +8,9 @@ import sys
 from pathlib import Path
 
 
-MAX_SUMMARY_WORDS = 700
+# 2026-09-27: raised from 700 — a length cap is a FORMAT rule (strict on substance,
+# tolerant on format); a feature summary with commands and decisions runs long.
+MAX_SUMMARY_WORDS = 1500
 SUMMARY_HEADINGS = ("Summary", "Files Changed", "Verification", "Assumptions")
 OPEN_PLACEHOLDER = "{" * 2
 CLOSE_PLACEHOLDER = "}" * 2
