@@ -425,3 +425,28 @@ checks and raw logs support — no vibes, no worker self-reports.
 ## Process lessons (2026-07-28, PR #82 review)
 - **Ideas worth keeping from a rejected PR.** PR #82's pre-call gateway was dropped (needs your own API key, so it converts flat-rate OAuth plans into metered API billing; incompatible with Claude Code; and it saves tokens by stripping the tool list, which is the thing that makes the CLI worth using). One idea inside it is worth remembering if the problem ever comes back: an *explicitly blessed* answer cache — key a reviewed answer to the exact request plus the exact selected source packet, and replay it with zero upstream calls, never auto-accepting a model answer. It only fires on byte-identical repeats, which is why it didn't justify 2,000 lines here.
 - **Doc-stated support floors need a CI job or they are fiction.** README promised Python 3.11+ while CI only ever ran 3.12; a 3.12-only f-string reached review with a fully green suite. Either test the floor or move it.
+
+## gpt-6-sol (codex) — slug not yet live
+
+- 2026-09-26 — one-task probe (run gpt-6-sol-engine-probe) on codex-cli
+  0.153.4 with the ChatGPT-account login: both attempts died before any work
+  with 400 "The 'gpt-6-sol' model is not supported when using Codex with a
+  ChatGPT account". ~/.codex/models_cache.json lists gpt-6-astra, gpt-5.6-sol,
+  gpt-5.6-terra, gpt-5.6-luna, gpt-5.5 — no GPT-6 Sol. Codex default stays
+  gpt-6-astra. Re-probe after `codex` self-updates or the cache refreshes;
+  the slug may differ from "gpt-6-sol".
+- Same day: grok engine default moved to grok-4.7. After `grok login
+  --device-auth` (the OAuth flow hangs with stdin closed; device-code works
+  headless), `grok models` lists grok-4.7 ONLY — 4.6 is gone from the plan.
+
+## Grok 4.7 (Grok Build CLI v1.0.13, per-call billing)
+
+- 2026-09-26 — probe (run grok-4.7-engine-probe): PASS on attempt 2, 354k
+  tokens, $0.32 total ($0.09 + $0.23). Attempt 1 was the CHECK's fault, not
+  the model's: templates/probe spec says heading "## Model Response Or API
+  Result" but probe_check.py demands a literal "MODEL RESPONSE:" marker with
+  colon. FIXED same day: probe_check.py now accepts the heading form too. Worker log
+  self-reports grok-4.7 (7 hits) but Ringer stored model_reported=None; the
+  JSON is pretty-printed in this version, so re-check model_report_regex.
+  Token burn on a trivial echo task is the 4.6 story repeated: expensive
+  third-opinion lane, not a first-choice worker.
