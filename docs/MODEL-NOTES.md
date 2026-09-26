@@ -609,3 +609,25 @@ checks and raw logs support — no vibes, no worker self-reports.
   papers and let the sibling task's edits stand; (3) match target papers by
   id prefix, never by splitting on "-q"; (4) a floor that assumes a text layer
   must accept an honest whole-paper skip with a specific reason.
+
+## Claude lineup adversarial review (run claude-lineup-adversarial-review, 2026-09-26) — round 1 rows are mostly CHECK NOISE
+
+- 12 code-review lanes (Fable 5.1, Opus 5.5, Sonnet 5, Haiku 4.5 × three
+  surfaces: today's verifier changes, the hardened template checks, the
+  engine wrappers). Final verdicts 9 PASS / 3 FAIL, but FIRST-TRY rates are
+  the routing signal and round 1's first attempts were sunk by my checks:
+  review-swarm.py's 1200-word cap (never stated in the spec — raised to
+  2500 in the template), my evidence checker not resolving the ABSOLUTE
+  paths the engine-wrappers spec itself asked for, and a stray illustrative
+  `a.py:3` treated as a citation. Check-caused first-attempt FAILs: Fable ×3,
+  Opus ×2, Sonnet ×2 (one of Sonnet's was the "Summary ≤3 lines" rule, a
+  format nit). Genuine: Haiku engine-wrappers — attempt 1 findings cited no
+  resolvable line, attempt 2 dropped the Evidence: label. Haiku is PROVEN on
+  code-review at 2/3 first try on its own merits.
+- Round 2 (same run_name): the nine Fable/Opus/Sonnet lanes re-run with the
+  fixed checker and the format rules stated in the spec, so their first-try
+  evidence is real. Read the round-2 rows, not round 1, for those three.
+- Substance: Fable's engine-wrappers report found that the placeholder
+  substitution is applied to the spec text (a spec containing "{model}" is
+  corrupted) and that model_report_regex reading the FIRST modelUsage key can
+  attribute a run to a helper model — both worth a fix swarm.
