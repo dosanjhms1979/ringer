@@ -675,3 +675,20 @@ checks and raw logs support — no vibes, no worker self-reports.
   11/11 real. First try.
 - Inline (orchestrator, config only): claude engine gains --strict-mcp-config
   so workers never inherit the user's MCP servers (Opus review finding).
+- Fable round 3 (2026-09-26): bridge PASS a1, ae53-checks PASS a1, ae53-ingest
+  PASS a2 — and that attempt-1 FAIL was my evidence checker AGAIN (its
+  citation regex knew py/sh/toml/json/md but not .ts, so an Exam Prep review
+  citing scripts/*.ts:NN read as "no citation"; the attempt-1 report passes
+  the fixed checker with 22 resolving citations). Extensions widened to
+  ts/tsx/js/mjs/mts/yml/yaml in every copy. Fable's code-review tally across
+  three rounds: 5 real first-try passes, 1 genuine attempt-2, 4 orchestrator
+  check defects — the tier reads probation only because the defects count.
+- SUBSTANCE from that lane: a real production-data bug predating AE-53 —
+  ingest-reading.ts filters tokens with /STOP|END OF TEST/i, so any sentence
+  token containing "stop" is dropped; `naplan-2013-y5-reading-q14` and
+  `-y3-reading-q26` ship a truncated CORRECT option. Verified in the bank,
+  filed as AE-54. Reviews earn their keep.
+- PROPOSAL (not built): Ringer needs a way to mark an eval row as
+  "orchestrator check defect" so it is excluded from first-try tiers without
+  editing history — today the only remedy is this notes file, and four
+  Claude models' tiers were distorted by it in one day.
