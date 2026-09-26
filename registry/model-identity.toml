@@ -136,6 +136,28 @@ confidence = "provisional"
 source = "https://docs.claude.com/en/docs/about-claude/models"
 last_verified = 2026-09-26
 
+[engines.claude]
+harness = "Claude Code CLI"
+access = "Anthropic subscription"
+# Added 2026-09-26: Kiran's claude.ai account through the `claude` CLI. The
+# canonical route for Anthropic models; Cursor's claude-* slugs reach the same
+# artifacts through a different harness and billing and stay separate rows.
+default_model_key = "claude-opus-5-5"
+
+[engines.claude.models."claude-fable-5-1"]
+display = "Claude Fable 5.1"
+lab = "Anthropic"
+confidence = "provisional"
+source = "https://www.anthropic.com/claude/fable"
+last_verified = 2026-09-26
+
+[engines.claude.models."claude-opus-5-5"]
+display = "Claude Opus 5.5"
+lab = "Anthropic"
+confidence = "provisional"
+source = "https://docs.claude.com/en/docs/about-claude/models"
+last_verified = 2026-09-26
+
 [engines.opencode]
 harness = "OpenCode"
 access = "OpenRouter API"

@@ -554,3 +554,23 @@ checks and raw logs support — no vibes, no worker self-reports.
   must accept that once (in the Cursor app / dashboard, not from the CLI).
   The two FAIL rows for this slug are a harness gate, not model evidence.
   Re-probe after Kiran acknowledges; until then do not route Fable lanes.
+
+## Claude Fable 5.1 and Claude Opus 5.5 via Claude Code CLI (engine `claude`, Anthropic subscription) — 2026-09-26
+
+- Why this route: Kiran asked why the Anthropic account was not used. It is the
+  first-class harness for Claude models (like Codex for GPT); Cursor was only
+  wired first. Engine added with a wrapper that strips the nested-session env
+  (CLAUDECODE, CLAUDE_CODE_*) so workers spawn from inside a Claude Code
+  session; sandbox on via `--settings '{"sandbox":{"enabled":true,
+  "allowUnsandboxedCommands":false}}'` + `--permission-mode acceptEdits`.
+- Probe (run claude-cli-engine-probes): BOTH PASS first try. Fable 5.1 23s,
+  output 1,219 tokens, cache read 81,628, notional total_cost_usd 0.68;
+  Opus 5.5 19s, output 1,356, cache read 76,966, notional 0.27. Billing is
+  the subscription, so total_cost_usd is a notional API price, not a charge.
+  modelUsage self-reports the exact slug, so harness identity wins here —
+  unlike Cursor, which reports no model.
+- Scoreboard tokens for this engine = the LAST "output_tokens" match in the
+  JSON (the modelUsage per-model block), which is lower than the top-level
+  usage figure; read the worker log for the full usage object.
+- Fable via Cursor stays gated on the data-policy acknowledgement; not needed
+  now that the Anthropic route works.
