@@ -639,3 +639,13 @@ checks and raw logs support — no vibes, no worker self-reports.
   useful surfaces (the AE-53 ingest commit, the Open Engine bridge, the AE-53
   check scripts). Round-2 reports carry 49 findings (11 P0/P1) — synthesis
   and a fix swarm follow.
+- 2026-09-26 ~19:15 AEST — claude.ai SESSION LIMIT (HTTP 429, "You've hit
+  your session limit · resets 10:20pm") hit with four Claude workers running
+  in parallel (Fable round-3 review + a 3-task fix swarm). Rows to IGNORE as
+  quota, not model: fable51-ae53-ingest (code-review, 2 attempts, no report)
+  and all three ringer-review-fixes-3 tasks (code-fix: Opus engine-args gate,
+  Sonnet failure-line regex, Fable opencode sandbox — 2 attempts each, no
+  patch). Rule: on the subscription account keep concurrent Claude workers
+  to 2–3 and never let Ringer's automatic retry fire into a 429 — it burned
+  attempt 2 on all four. Both runs relaunched after the reset (fix swarm at
+  max_parallel 2).
