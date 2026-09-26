@@ -119,6 +119,23 @@ confidence = "provisional"
 source = "https://cursor.com/docs/models"
 last_verified = 2026-09-26
 
+[engines.cursor.models."claude-fable-5-1-high"]
+# `agent --list-models` (2026-09-26): "claude-fable-5-1-high - Claude Fable 5.1 1M (NO ZDR)".
+# NO ZDR = Cursor's zero-data-retention guarantee does not cover this model.
+display = "Claude Fable 5.1"
+lab = "Anthropic"
+confidence = "provisional"
+source = "https://www.anthropic.com/claude/fable"
+last_verified = 2026-09-26
+
+[engines.cursor.models."claude-opus-5-5-high"]
+# `agent --list-models` (2026-09-26): "claude-opus-5-5-high - Claude Opus 5.5 1M High".
+display = "Claude Opus 5.5"
+lab = "Anthropic"
+confidence = "provisional"
+source = "https://docs.claude.com/en/docs/about-claude/models"
+last_verified = 2026-09-26
+
 [engines.opencode]
 harness = "OpenCode"
 access = "OpenRouter API"

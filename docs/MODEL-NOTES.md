@@ -536,3 +536,21 @@ checks and raw logs support — no vibes, no worker self-reports.
   only because the orchestrator re-ran the suite after applying. RULE: never
   pipe a verify command's test runner into tail/head/grep; use `set -o
   pipefail` or write output to a file and tail it separately.
+
+## Claude Opus 5.5 via Cursor CLI — 2026-09-26 validation
+
+- Probe (run cursor-claude-engine-probes, model claude-opus-5-5-high): PASS
+  first try, 28s. Usage inputTokens 8 / outputTokens 1,207 / cacheRead 52,546
+  / cacheWrite 27,389 — with Cursor's prompt caching the scoreboard's
+  "input tokens" column (8) is meaningless for this engine; read cacheRead.
+  Self-reports Opus 5.5. Plan-included.
+
+## Claude Fable 5.1 via Cursor CLI — blocked on a data-policy acknowledgement
+
+- Same run, model claude-fable-5-1-high: both attempts died before any work
+  with `ActionRequiredError: Review Data Policy You must acknowledge Claude
+  Fable 5's data retention policy to use the model.` Cursor lists every Fable
+  slug as "(NO ZDR)" — zero data retention does not cover it, and the account
+  must accept that once (in the Cursor app / dashboard, not from the CLI).
+  The two FAIL rows for this slug are a harness gate, not model evidence.
+  Re-probe after Kiran acknowledges; until then do not route Fable lanes.
