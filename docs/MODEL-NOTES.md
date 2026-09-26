@@ -631,3 +631,11 @@ checks and raw logs support — no vibes, no worker self-reports.
   substitution is applied to the spec text (a spec containing "{model}" is
   corrupted) and that model_report_regex reading the FIRST modelUsage key can
   attribute a run to a helper model — both worth a fix swarm.
+- Round 2 result (2026-09-26): 9/9 PASS on attempt 1 with the fixed checker
+  and the format rules in the spec. Tiers after rounds 1+2: Sonnet 5 PROVEN
+  (4/6 first try), Opus 5.5 PROVEN (4/6), Haiku 4.5 PROVEN (2/3), Fable 5.1
+  still probation at 3/6 because round 1's three check-caused FAILs weigh it
+  down — three more first-try passes needed; round 3 gives it three fresh,
+  useful surfaces (the AE-53 ingest commit, the Open Engine bridge, the AE-53
+  check scripts). Round-2 reports carry 49 findings (11 P0/P1) — synthesis
+  and a fix swarm follow.
