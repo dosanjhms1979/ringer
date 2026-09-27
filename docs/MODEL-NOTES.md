@@ -748,3 +748,6 @@ checks and raw logs support — no vibes, no worker self-reports.
   (0.70) and research (0.75). The same audit doubles as evidence that the
   orchestrator's checks were the dominant failure source through September —
   the check-craft rules in this file exist because of exactly these rows.
+
+## gpt-6-sol (codex) — 2026-09-27
+- The 2026-09-26 probe FAIL (400 "not supported when using Codex with a ChatGPT account") was the CLI, not the plan: the ChatGPT app's bundled codex (0.155.0-alpha.16) and codex-cli 0.157.1 both run gpt-6-sol on the same login. codex-cli 0.153.4 printed "Model metadata for `gpt-6-sol` not found" first — treat that warning as "upgrade codex" before blaming the plan. Row annotated harness. Probe on 0.157.1: PASS first try, 6.7k tokens, 32 s.
