@@ -813,6 +813,79 @@ class SteeringConfig:
 
 
 @dataclass(frozen=True)
+class TriageConfig:
+    enabled: bool = False
+    endpoint: str = "https://api.typesafe.ai/v1/systemone"
+    model: str = "jev-latest"
+    api_key_env: str = "TYPESAFE_API_KEY"
+    timeout_s: float = 20.0
+    hold_retry_on: tuple[str, ...] = ()
+    log_path: Path = field(default_factory=lambda: default_state_dir() / "triage.jsonl")
+
+
+TRIAGE_CRITERIA = {
+    "model": "the worker produced wrong or incomplete work against a fair spec and a correct check",
+    "spec": "the spec was ambiguous, self-contradictory, over-constrained or omitted something the check demands",
+    "check": "the check script itself is wrong: asserts layout or wording the spec never required, counts wrong, wrong order, wrong paths, or would fail honest work",
+    "harness": "the sandbox, quota, credentials, missing tool, timeout or environment blocked the worker before or during the work",
+}
+
+
+def load_triage_config(raw: Any, state_dir: Path) -> TriageConfig:
+    """Optional triage must never prevent config loading."""
+    defaults = TriageConfig()
+    try:
+        defaults = dataclass_replace(defaults, log_path=Path(state_dir) / "triage.jsonl")
+        if not isinstance(raw, dict):
+            return defaults
+        enabled = raw.get("enabled", False)
+        if not isinstance(enabled, bool):
+            return defaults
+        strings = {key: raw.get(key, getattr(defaults, key))
+                   for key in ("endpoint", "model", "api_key_env")}
+        if any(not isinstance(value, str) or not value.strip() for value in strings.values()):
+            return defaults
+        timeout = float(raw.get("timeout_s", defaults.timeout_s))
+        if not 0 < timeout < float("inf"):
+            return defaults
+        holds = raw.get("hold_retry_on", ())
+        if not isinstance(holds, (list, tuple)):
+            return defaults
+        return TriageConfig(
+            enabled=enabled, **strings, timeout_s=timeout,
+            hold_retry_on=tuple(value for value in holds
+                                if isinstance(value, str) and value in TRIAGE_CRITERIA),
+            log_path=Path(raw.get("log_path", defaults.log_path)).expanduser(),
+        )
+    except Exception:
+        return defaults
+
+
+def triage_request_body(state: dict[str, Any], model: str) -> dict[str, Any]:
+    return {"state": state, "model": model, "questions": {"cause": {
+        "type": "choice",
+        "instructions": "Given the task spec, the executed check command and its output, the worker log tail and the worker's own notes, decide what most likely caused this attempt to fail the check. The check is written by the orchestrator, not the worker.",
+        "criteria": dict(TRIAGE_CRITERIA),
+    }}}
+
+
+def parse_triage_answer(payload: Any) -> dict[str, Any]:
+    """Reject malformed answers so they can never hold a retry."""
+    answer = payload.get("answers", payload)["cause"]
+    choice = answer["choice"]
+    confidence = answer["confidence"]
+    probabilities = answer["probabilities"]
+    def probability(value: Any) -> bool:
+        return isinstance(value, (int, float)) and not isinstance(value, bool) and 0 <= value <= 1
+    if (choice not in TRIAGE_CRITERIA or not probability(confidence)
+            or not isinstance(probabilities, dict)
+            or set(probabilities) != set(TRIAGE_CRITERIA)
+            or not all(probability(value) for value in probabilities.values())):
+        raise ValueError("invalid triage answer")
+    return {"choice": choice, "confidence": confidence, "probabilities": probabilities}
+
+
+@dataclass(frozen=True)
 class UpdateConfig:
     auto: bool = True
     check_interval_s: int = DEFAULT_UPDATE_CHECK_INTERVAL_S
@@ -1075,6 +1148,7 @@ class AppConfig:
     engines: dict[str, EngineConfig]
     artifact: ArtifactConfig
     steering: SteeringConfig = field(default_factory=SteeringConfig)
+    triage: TriageConfig = field(default_factory=TriageConfig)
     update: UpdateConfig = field(default_factory=UpdateConfig)
     engine_bin_diagnostics: tuple[EngineBinDiagnostic, ...] = ()
 
@@ -1127,6 +1201,7 @@ class AppConfig:
             engines=engines,
             artifact=artifact_config,
             steering=steering_config,
+            triage=load_triage_config(data.get("triage"), state_dir),
             update=update_config,
             engine_bin_diagnostics=engine_bin_diagnostics,
         )
@@ -9355,6 +9430,9 @@ class RingerRunner:
                         "check_output_tail": verify.raw_output_tail[-4000:],
                         "worker_timed_out": worker.timed_out,
                     })
+                if (attempt == 1 and attempt < max_attempts
+                        and verdict in {"FAIL", "TIMEOUT"} and self.config.triage.enabled):
+                    await asyncio.to_thread(self._triage_attempt, runtime, verify, worker, attempt)
                 duration_ms = int((time.monotonic() - attempt_started) * 1000)
                 self._log_attempt(runtime, current_spec, retrying, worker, verify, verdict, duration_ms)
                 if verdict == "PASS":
@@ -9365,7 +9443,8 @@ class RingerRunner:
                         runtime.ended_at_monotonic = time.monotonic()
                     await self._cleanup_worktree_on_pass(runtime)
                     return
-                if attempt < max_attempts and verdict in {"FAIL", "TIMEOUT"}:
+                if (attempt < max_attempts and verdict in {"FAIL", "TIMEOUT"}
+                        and not runtime.attempt_history[-1].get("retry_held")):
                     failure_context = build_failure_context(runtime.log_path, verify.raw_output_tail)
                     current_spec = (
                         f"{runtime.task.spec}\n\n"
@@ -9734,6 +9813,87 @@ class RingerRunner:
             except Exception:
                 pass
 
+    def _triage_attempt(
+        self, runtime: TaskRuntime, verify: VerifyResult, worker: WorkerResult, attempt: int,
+    ) -> None:
+        cfg = self.config.triage
+        started = time.monotonic()
+        model = ""
+        result: dict[str, Any]
+        try:
+            model = model_log_text(worker.reported_model) or resolved_task_model(
+                runtime.task, self.config.engines.get(runtime.task.engine),
+                runtime.last_worker_command,
+            )
+            key = os.environ.get(cfg.api_key_env)
+            if not key:
+                raise ValueError(f"missing environment variable {cfg.api_key_env}")
+            log_tail = ""
+            with contextlib.suppress(OSError, UnicodeError):
+                log_tail = runtime.log_path.read_text(encoding="utf-8")[-3000:]
+            notes = ""
+            for name in ("fix-summary.md", "notes.md", "report.md"):
+                path = runtime.taskdir / name
+                if path.exists():
+                    with contextlib.suppress(OSError, UnicodeError):
+                        notes = path.read_text(encoding="utf-8")[:2000]
+                    break
+            state = {
+                "task_key": runtime.task.key, "engine": runtime.task.engine,
+                "model": model, "task_type": runtime.task.task_type,
+                "spec": runtime.task.spec[:4000], "check_command": runtime.task.check,
+                "check_output": verify.raw_output_tail[-4000:],
+                "check_returncode": verify.check_returncode,
+                "check_timed_out": verify.check_timed_out,
+                "worker_returncode": worker.returncode, "worker_timed_out": worker.timed_out,
+                "worker_log_tail": log_tail, "worker_notes": notes,
+            }
+            request = urllib.request.Request(
+                cfg.endpoint, data=json.dumps(triage_request_body(state, cfg.model)).encode(),
+                headers={"Content-Type": "application/json", "Authorization": f"Bearer {key}"},
+                method="POST",
+            )
+            answers: list[dict[str, Any]] = []
+            def request_answer() -> None:
+                try:
+                    with urllib.request.urlopen(request, timeout=cfg.timeout_s) as response:
+                        answers.append(parse_triage_answer(json.loads(response.read())))
+                except Exception as exc:
+                    # Do not expose credentials or arbitrary server response bodies.
+                    answers.append({"error": type(exc).__name__})
+            # urllib's timeout is per socket operation, not an overall deadline.
+            # A daemon cannot hold up retries or shutdown if DNS/body reads stall.
+            thread = threading.Thread(target=request_answer, daemon=True)
+            thread.start()
+            thread.join(max(0.0, cfg.timeout_s - (time.monotonic() - started)))
+            result = ({"error": "timeout"} if thread.is_alive() else answers[0])
+            if "error" not in result:
+                result = {**result, "model": cfg.model,
+                          "elapsed_ms": int((time.monotonic() - started) * 1000)}
+        except Exception as exc:
+            result = {"error": (str(exc) if isinstance(exc, ValueError)
+                                else type(exc).__name__)[:160]}
+        held = result.get("choice") in cfg.hold_retry_on
+        with self.lock:
+            runtime.attempt_history[-1]["triage"] = result
+            if held:
+                runtime.attempt_history[-1]["retry_held"] = True
+        with contextlib.suppress(Exception):
+            append_text(cfg.log_path, json.dumps({
+                "ts": datetime.now(timezone.utc).isoformat(), "run_id": self.run_id,
+                "task_key": runtime.task.key, "attempt": attempt,
+                "engine": runtime.task.engine, "model": model,
+                "task_type": runtime.task.task_type, "verdict": verdict_for(worker, verify),
+                "triage": result,
+            }) + "\n")
+        with contextlib.suppress(Exception):
+            if "error" in result:
+                print(f"[triage] {runtime.task.key}: unavailable ({result['error']})")
+            else:
+                action = "retry HELD" if held else "retrying"
+                print(f"[triage] {runtime.task.key}: cause={result['choice']} "
+                      f"({result['confidence']:.2f}) — {action}")
+
     def _log_attempt(
         self,
         runtime: TaskRuntime,
@@ -9771,6 +9931,9 @@ class RingerRunner:
             f"model={stamped_model}",
             f"task_type={runtime.task.task_type}",
         ]
+        if runtime.attempt_history and "triage" in runtime.attempt_history[-1]:
+            triage = runtime.attempt_history[-1]["triage"]
+            notes_parts.append(f"triage={triage.get('choice', 'error')}")
         if worker.error:
             notes_parts.append(f"worker_error={worker.error}")
         if verify.missing_files:

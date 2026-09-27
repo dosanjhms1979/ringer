@@ -398,6 +398,29 @@ The per-user philosophy, stated plainly: every user's workload is different, so 
 
 Ringer can optionally load per-model steering profiles, prepend applicable worker rules to both first-attempt and retry prompts, print driver guidance for the orchestrator, and collect one local observation row per attempt. The feature is fail-open: missing or malformed steering data never blocks a run. Setup, the profile contract, and the observation schema are documented in [`docs/STEERING.md`](docs/STEERING.md).
 
+## Triage hook (optional)
+
+Enable advisory first-attempt failure triage in your config:
+
+```toml
+[triage]
+enabled = true
+# hold_retry_on = ["check", "harness"]
+```
+
+Set `TYPESAFE_API_KEY` to use the default TypeSafe System One endpoint and
+`jev-latest` model. The hook sends the task spec, executed check and output,
+worker log tail and worker notes once before a retry. It classifies the likely
+cause as `model` (worker work), `spec` (requirements), `check` (incorrect
+orchestrator check), or `harness` (environment/tooling). Results are advisory:
+errors or missing credentials leave retries unchanged. The hook is disabled by
+default; `hold_retry_on` is empty by default and only explicitly listed causes
+hold the retry and mark the task failed.
+
+Results appear in attempt history and `<state_dir>/triage.jsonl`. Optional
+settings are `endpoint`, `model`, `api_key_env`, `timeout_s` (20 seconds by
+default), and `log_path`.
+
 ## Hard-won invariants
 
 Four rules are baked into every worker invocation. They all cost us real debugging hours; you get them for free:
