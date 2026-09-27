@@ -724,3 +724,27 @@ checks and raw logs support — no vibes, no worker self-reports.
   first try but under the 3-task minimum — real fixes (AE-54, the remaining
   P2 review findings) close that.
   Haiku's genuine engine-wrappers failure was left standing.
+
+## 2026-09-27 — GPT-6 Astra first-attempt audit (run astra-first-attempt-audit): code-feature PROVEN on evidence, not simulation
+
+- Kiran asked what could be "simulated" to prove Astra. Answer: nothing —
+  synthetic tasks would move the number without measuring feature work.
+  Instead: an evidence audit of all 21 first-attempt FAILs on code-feature,
+  four read-only lanes on Opus 5.5 and Sonnet 5 (never Astra judging itself),
+  one cited verdict per failure, CHECK DEFECT only with the check's own
+  output/script line or a documented lesson as evidence. 4/4 lanes PASS
+  (lane D attempt 1 was my evidence checker again — bare MODEL-NOTES.md
+  citation; annotated).
+- Verdicts: CHECK DEFECT ×14 (AE-21 &apos; grep, AE-23 it.each grep, AE-24
+  pre-existing helper grep, AE-28 ANSI count grep, AE-32 grader KeyError,
+  AE-33 per-file provenance grep, AE-35 label grep in one dir, AE-37 quoted
+  codes regex, AE-38 double-quote grep, AE-39 wrong-file env grep, AE-41
+  protected test file, AE-50 ×3 shared-tree ownership loop); QUOTA ×4
+  (AE-44, AE-45, AE-47 Codex usage limit; AE-51 out of credits — the auditor
+  wrote GENUINE, the evidence says the worker never started); GENUINE ×3
+  left standing (AE-34 ×2, AE-42). Every annotation carries its reason.
+- Result: Astra code-feature 32/55 (0.58, probation) → 45/60 (0.75, PROVEN)
+  with 19 voided attempts shown on the scoreboard. Also proven on code-fix
+  (0.70) and research (0.75). The same audit doubles as evidence that the
+  orchestrator's checks were the dominant failure source through September —
+  the check-craft rules in this file exist because of exactly these rows.
