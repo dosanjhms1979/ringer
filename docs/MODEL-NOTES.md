@@ -743,8 +743,8 @@ checks and raw logs support — no vibes, no worker self-reports.
   (AE-44, AE-45, AE-47 Codex usage limit; AE-51 out of credits — the auditor
   wrote GENUINE, the evidence says the worker never started); GENUINE ×3
   left standing (AE-34 ×2, AE-42). Every annotation carries its reason.
-- Result: Astra code-feature 32/55 (0.58, probation) → 45/60 (0.75, PROVEN)
-  with 19 voided attempts shown on the scoreboard. Also proven on code-fix
+- Result: Astra code-feature 32/55 (0.58, probation) → 46/56 (0.82, PROVEN)
+  with 29 voided attempts shown on the scoreboard (43 annotations active overall). Also proven on code-fix
   (0.70) and research (0.75). The same audit doubles as evidence that the
   orchestrator's checks were the dominant failure source through September —
   the check-craft rules in this file exist because of exactly these rows.
