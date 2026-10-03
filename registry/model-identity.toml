@@ -40,6 +40,27 @@ confidence = "verified"
 source = "https://developers.openai.com/codex/models"
 last_verified = 2026-07-10
 
+[engines.codex.models."gpt-6-astra"]
+display = "GPT-6 Astra"
+lab = "OpenAI"
+confidence = "verified"     # Codex 0.160.0 self-reported model: gpt-6-astra, provider: openai; needs Codex >= 0.157
+source = "https://learn.chatgpt.com/docs/models"
+last_verified = 2026-10-03
+
+[engines.codex.models."gpt-6-sol"]
+display = "GPT-6 Sol"
+lab = "OpenAI"
+confidence = "verified"     # Codex 0.160.0 self-reported model: gpt-6-sol, provider: openai
+source = "https://learn.chatgpt.com/docs/models"
+last_verified = 2026-10-03
+
+[engines.codex.models."gpt-6-luna"]
+display = "GPT-6 Luna"
+lab = "OpenAI"
+confidence = "verified"     # Codex 0.160.0 self-reported model: gpt-6-luna, provider: openai
+source = "https://learn.chatgpt.com/docs/models"
+last_verified = 2026-10-03
+
 [engines.grok]
 harness = "Grok Build CLI"
 access = "OAuth plan"
@@ -98,3 +119,36 @@ lab = "Meta"
 confidence = "verified"
 source = "manifest model field; OpenRouter slug meta-llama/llama-3.3-70b-instruct:free"
 last_verified = 2026-07-10
+
+[engines.claude]
+harness = "Claude Code CLI"
+access = "OAuth plan"
+default_model_key = "claude-opus-5-5"
+
+[engines.claude.models."claude-fable-5-1"]
+display = "Claude Fable 5.1"
+lab = "Anthropic"
+confidence = "verified"     # Claude Code self-reported via modelUsage, probe run identity-probe-20261003T005309Z
+source = "https://platform.claude.com/docs/en/about-claude/models/overview"
+last_verified = 2026-10-03
+
+[engines.claude.models."claude-opus-5-5"]
+display = "Claude Opus 5.5"
+lab = "Anthropic"
+confidence = "verified"     # Claude Code self-reported via modelUsage, probe run identity-probe-20261003T005309Z
+source = "https://platform.claude.com/docs/en/about-claude/models/overview"
+last_verified = 2026-10-03
+
+[engines.claude.models."claude-sonnet-5-5"]
+display = "Claude Sonnet 5.5"
+lab = "Anthropic"
+confidence = "verified"     # Claude Code self-reported via modelUsage, probe run identity-probe-20261003T005309Z
+source = "https://platform.claude.com/docs/en/about-claude/models/overview"
+last_verified = 2026-10-03
+
+[engines.claude.models."claude-haiku-4-5-20251001"]
+display = "Claude Haiku 4.5"
+lab = "Anthropic"
+confidence = "verified"     # Claude Code self-reported via modelUsage, probe run identity-probe-20261003T005309Z
+source = "https://platform.claude.com/docs/en/about-claude/models/overview"
+last_verified = 2026-10-03
