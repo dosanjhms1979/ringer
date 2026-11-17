@@ -139,6 +139,13 @@ confidence = "verified"     # Claude Code self-reported via modelUsage, probe ru
 source = "https://platform.claude.com/docs/en/about-claude/models/overview"
 last_verified = 2026-10-03
 
+[engines.claude.models."claude-fable-5-2"]
+display = "Claude Fable 5.2"
+lab = "Anthropic"
+confidence = "verified"     # Claude Code self-reported via modelUsage (canonicalModel claude-fable-5-2, provider firstParty, contextWindow 1000000), probe run identity-probe-fable-5-2-20261117T221745Z on Kiran's personal account (RINGER_CLAUDE_CONFIG_DIR=~/.claude-personal)
+source = "https://platform.claude.com/docs/en/about-claude/models/overview"
+last_verified = 2026-11-18
+
 [engines.claude.models."claude-opus-5-5"]
 display = "Claude Opus 5.5"
 lab = "Anthropic"
